@@ -1,16 +1,117 @@
-# cuet_dsw_app
+# CUET DSW Smart Service App
 
-A new Flutter project.
+A mobile and web-based smart service platform for the Directorate of Students' Welfare (DSW) of Chittagong University of Engineering & Technology (CUET).
 
-## Getting Started
+The system focuses on three student services:
 
-This project is a starting point for a Flutter application.
+1. Character Certificate Application
+2. Hall Transfer Application
+3. Online Complaint System
 
-A few resources to get you started if this is your first Flutter project:
+## Project Objective
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+The goal of this project is to reduce paper-based processing, physical office visits, and repeated follow-up by providing secure and traceable digital workflows for selected DSW services.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Main Features
+
+### Student Application
+
+- Student login
+- Character Certificate application
+- Hall Transfer application
+- Complaint submission
+- Application tracking
+- Status history
+- Notifications
+- Document upload
+- Approved certificate download
+- Student profile
+
+### Administrative Dashboard
+
+Authorized officials will be able to:
+
+- Review applications
+- Request corrections
+- Update application status
+- Approve or reject requests
+- Assign complaints
+- Add resolution notes
+- View reports
+- View audit logs
+
+## AI Features
+
+The application will use Google Gemini API for:
+
+- Form completeness checking
+- Detecting unclear or inconsistent information
+- Suggesting corrections
+- Complaint classification
+- Complaint summarization
+- Urgency indication
+- Responsible office recommendation
+
+AI recommendations are advisory only.
+
+All final decisions are made by authorized CUET officials.
+
+## Technology Stack
+
+### Frontend
+- Flutter
+- Dart
+- Material 3
+
+### Backend
+- Firebase
+
+### Database
+- Cloud Firestore
+
+### Authentication
+- Firebase Authentication
+
+### File Storage
+- Cloudinary
+
+### AI
+- Google Gemini API
+
+### Development Tools
+- VS Code
+- Android Studio
+- Git
+- GitHub
+- Postman
+
+## Current Development Status
+
+### Completed
+- Flutter project setup
+- Student frontend foundation
+- Splash screen
+- Login screen
+- Home screen
+- Main navigation
+- Basic reusable widgets
+
+### Planned
+- Complete student service forms
+- Firebase Authentication
+- Firestore integration
+- Administrative dashboard
+- Cloudinary integration
+- Gemini AI integration
+- Testing
+- Documentation
+
+## Project Structure
+
+```text
+lib/
+├── main.dart
+├── models/
+├── screens/
+├── theme/
+└── widgets/
