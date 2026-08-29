@@ -3,28 +3,41 @@ import 'package:flutter/material.dart';
 import '../models/application_model.dart';
 import '../widgets/service_card.dart';
 import '../widgets/status_chip.dart';
+import 'character_certificate_screen.dart';
+import 'complaint_screen.dart';
+import 'hall_transfer_screen.dart';
+import 'notifications_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  final List<ApplicationModel> applications = const [
+  static const List<ApplicationModel> _recentApplications = [
     ApplicationModel(
-      title: 'Character Certificate',
-      requestType: 'Application ID: #DSW-1024',
-      status: 'Under Review',
+      trackingNumber: 'CC-2026-0012',
+      serviceType: 'Character Certificate',
       date: 'Submitted on 20 Aug 2026',
+      status: 'Under Review',
+      submittedInformation: {'Purpose': 'Higher studies'},
+      documentNames: ['Student ID Card'],
+      statusHistory: ['Submitted', 'Under Review'],
     ),
     ApplicationModel(
-      title: 'Hall Transfer',
-      requestType: 'Application ID: #DSW-1018',
-      status: 'In Progress',
+      trackingNumber: 'HT-2026-0015',
+      serviceType: 'Hall Transfer',
       date: 'Submitted on 15 Aug 2026',
+      status: 'Correction Required',
+      submittedInformation: {'Current Hall': 'Hall A'},
+      documentNames: ['Transfer letter'],
+      statusHistory: ['Submitted', 'Under Review', 'Correction Required'],
     ),
     ApplicationModel(
-      title: 'Student Complaint',
-      requestType: 'Application ID: #DSW-1007',
-      status: 'Approved',
+      trackingNumber: 'CMP-2026-0021',
+      serviceType: 'Student Complaint',
       date: 'Resolved on 10 Aug 2026',
+      status: 'In Progress',
+      submittedInformation: {'Category': 'Hall Facilities'},
+      documentNames: ['Complaint Photo'],
+      statusHistory: ['Submitted', 'Assigned', 'In Progress'],
     ),
   ];
 
@@ -62,16 +75,25 @@ class HomeScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_none_rounded,
-                        color: Color(0xFF0D47A1),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationsScreen(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: Color(0xFF0D47A1),
+                        ),
                       ),
                     ),
                   ],
@@ -86,21 +108,31 @@ class HomeScreen extends StatelessWidget {
                   title: 'Character Certificate',
                   subtitle: 'Apply and track your certificate',
                   icon: Icons.description_outlined,
-                  onTap: () {},
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CharacterCertificateScreen(),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ServiceCard(
                   title: 'Hall Transfer',
                   subtitle: 'Submit and track hall transfer requests',
                   icon: Icons.home_work_outlined,
-                  onTap: () {},
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const HallTransferScreen(),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ServiceCard(
                   title: 'Student Complaint',
                   subtitle: 'Submit complaints securely',
                   icon: Icons.report_problem_outlined,
-                  onTap: () {},
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ComplaintScreen()),
+                  ),
                 ),
                 const SizedBox(height: 28),
                 Text(
@@ -108,7 +140,7 @@ class HomeScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 12),
-                ...applications.map((application) {
+                ..._recentApplications.map((application) {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(16),
@@ -140,7 +172,7 @@ class HomeScreen extends StatelessWidget {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      application.title,
+                                      application.serviceType,
                                       style: const TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w700,
@@ -153,7 +185,7 @@ class HomeScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                application.requestType,
+                                application.trackingNumber,
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                               const SizedBox(height: 4),
