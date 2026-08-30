@@ -1,16 +1,23 @@
-# cuet_dsw_app
+# CUET DSW Smart Service App
 
-A new Flutter project.
+A Flutter-based smart service application for CUET Directorate of Students' Welfare.
 
-## Getting Started
+## Backend Branch
 
-This project is a starting point for a Flutter application.
+This branch contains backend/service integration work including:
 
-A few resources to get you started if this is your first Flutter project:
+- Firebase Authentication
+- Firestore user management
+- Complaint services
+- Hall transfer services
+- Certificate services
+- Notification services
+- Admin services
+- AI assistant services
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Tech Stack
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Flutter
+- Dart
+- Firebase Authentication
+- Cloud Firestore
