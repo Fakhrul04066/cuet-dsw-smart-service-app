@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "693483342941",
+    "project_id": "cuet-dsw-smart-service",
+    "storage_bucket": "cuet-dsw-smart-service.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:693483342941:android:1671cde32380df44fd51b4",
+        "android_client_info": {
+          "package_name": "bd.ac.cuet.cuet_dsw_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCDPlqNk3UTkzRKh7o-guqp0KyNuJ-1uw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -33,6 +33,15 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Private environment / secrets
+.env
+.env.*
+*.env
+*.local
+firebase_options.dart
+secrets.*
+config.*
+
 # Symbolication related
 app.*.symbols
 
