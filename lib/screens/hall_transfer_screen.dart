@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/ai_assistant_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class HallTransferScreen extends StatefulWidget {
@@ -17,6 +18,8 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
   final _preferredHallController = TextEditingController();
   final _reasonController = TextEditingController();
   bool _declarationAccepted = false;
+  bool _checkingForm = false;
+  Map<String, dynamic>? _aiCheckResult;
 
   @override
   void dispose() {
@@ -26,6 +29,89 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
     _preferredHallController.dispose();
     _reasonController.dispose();
     super.dispose();
+  }
+
+  Future<void> _runAiCheck() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() => _checkingForm = true);
+    try {
+      final result = GeminiAssistantService.instance.checkApplicationForm(
+        applicationType: 'Hall Transfer',
+        formFields: {
+          'studentName': _studentNameController.text,
+          'studentId': _studentIdController.text,
+          'currentHall': _currentHallController.text,
+          'preferredHall': _preferredHallController.text,
+          'reason': _reasonController.text,
+        },
+      );
+      setState(() => _aiCheckResult = result);
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('AI Form Check'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(GeminiAssistantService.advisoryNotice),
+                const SizedBox(height: 12),
+                if ((result['missingFields'] as List).isNotEmpty) ...[
+                  const Text('Missing:'),
+                  ...((result['missingFields'] as List).map(
+                    (item) => Text('• $item'),
+                  )),
+                  const SizedBox(height: 8),
+                ],
+                if ((result['unclearStatements'] as List).isNotEmpty) ...[
+                  const Text('Suggestions:'),
+                  ...((result['unclearStatements'] as List).map(
+                    (item) => Text('• $item'),
+                  )),
+                  const SizedBox(height: 8),
+                ],
+                if ((result['possibleInconsistencies'] as List).isNotEmpty) ...[
+                  const Text('Potential inconsistency:'),
+                  ...((result['possibleInconsistencies'] as List).map(
+                    (item) => Text('• $item'),
+                  )),
+                  const SizedBox(height: 8),
+                ],
+                const Text('Suggestions:'),
+                ...((result['suggestions'] as List).map(
+                  (item) => Text('• $item'),
+                )),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'AI assistance is currently unavailable. You may continue manually.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _checkingForm = false);
+      }
+    }
   }
 
   void _submitForm() {
@@ -171,14 +257,37 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.checklist_rounded),
-                    label: const Text('Check Form'),
+                    onPressed: _checkingForm ? null : _runAiCheck,
+                    icon: _checkingForm
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.checklist_rounded),
+                    label: Text(
+                      _checkingForm ? 'Checking Form...' : 'Check Form with AI',
+                    ),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
                 ),
+                if (_aiCheckResult != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F7FB),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      GeminiAssistantService.advisoryNotice,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

@@ -37,6 +37,8 @@ class MockData {
       statusHistory: ['Submitted', 'Under Review', 'Approved'],
       officialNotes: 'Application is valid and is under academic verification.',
       finalDecision: 'Approved for issue',
+      approvedCertificateUrl:
+          'https://example.com/certificates/cc-2026-0012-approved.pdf',
     ),
     ApplicationModel(
       trackingNumber: 'HT-2026-0015',

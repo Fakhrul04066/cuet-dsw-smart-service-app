@@ -8,6 +8,7 @@ class ApplicationModel {
   final List<String> statusHistory;
   final String? officialNotes;
   final String? finalDecision;
+  final String? approvedCertificateUrl;
 
   const ApplicationModel({
     required this.trackingNumber,
@@ -19,5 +20,6 @@ class ApplicationModel {
     required this.statusHistory,
     this.officialNotes,
     this.finalDecision,
+    this.approvedCertificateUrl,
   });
 }

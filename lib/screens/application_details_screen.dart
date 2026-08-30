@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/application_model.dart';
 import '../widgets/status_chip.dart';
@@ -142,7 +143,34 @@ class ApplicationDetailsScreen extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () async {
+                      final url = application.approvedCertificateUrl;
+                      if (url == null || url.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'The approved certificate is not available yet.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      final uri = Uri.parse(url);
+                      if (!await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      )) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'The certificate could not be opened right now.',
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
                     icon: const Icon(Icons.download_rounded),
                     label: const Text('Download Approved Certificate'),
                     style: OutlinedButton.styleFrom(
