@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/ai_assistant_service.dart';
+import '../services/auth_service.dart';
+import '../services/character_certificate_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class CharacterCertificateScreen extends StatefulWidget {
@@ -22,9 +24,18 @@ class _CharacterCertificateScreenState
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _purposeController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _documentsController = TextEditingController();
   bool _declarationAccepted = false;
   bool _checkingForm = false;
+  bool _isSubmitting = false;
   Map<String, dynamic>? _aiCheckResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudentProfile();
+  }
 
   @override
   void dispose() {
@@ -36,7 +47,24 @@ class _CharacterCertificateScreenState
     _emailController.dispose();
     _phoneController.dispose();
     _purposeController.dispose();
+    _descriptionController.dispose();
+    _documentsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadStudentProfile() async {
+    final profile = await AuthService.instance.getCurrentUserProfile();
+    if (!mounted || profile == null) {
+      return;
+    }
+
+    setState(() {
+      _studentNameController.text = profile.name;
+      _studentIdController.text = profile.studentId;
+      _departmentController.text = profile.department;
+      _emailController.text = profile.email;
+      _phoneController.text = profile.phone;
+    });
   }
 
   Future<void> _runAiCheck() async {
@@ -57,6 +85,7 @@ class _CharacterCertificateScreenState
           'email': _emailController.text,
           'phone': _phoneController.text,
           'purpose': _purposeController.text,
+          'description': _descriptionController.text,
         },
       );
       setState(() => _aiCheckResult = result);
@@ -125,7 +154,7 @@ class _CharacterCertificateScreenState
     }
   }
 
-  void _submitForm() {
+  Future<void> _previewAndSubmit() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -139,21 +168,127 @@ class _CharacterCertificateScreenState
       return;
     }
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Application Submitted'),
-        content: const Text(
-          'Your Character Certificate application has been submitted successfully.\n\nTracking Number: CC-2026-0012',
+    final documents = _documentsController.text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+
+    final preview = AlertDialog(
+      title: const Text('Preview Character Certificate'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Student: ${_studentNameController.text}'),
+            const SizedBox(height: 4),
+            Text('Student ID: ${_studentIdController.text}'),
+            const SizedBox(height: 4),
+            Text('Department: ${_departmentController.text}'),
+            const SizedBox(height: 4),
+            Text(
+              'Level / Term: ${_levelController.text} / ${_termController.text}',
+            ),
+            const SizedBox(height: 12),
+            const Text('Purpose:'),
+            Text(_purposeController.text),
+            const SizedBox(height: 12),
+            const Text('Description:'),
+            Text(_descriptionController.text),
+            const SizedBox(height: 12),
+            const Text('Supporting Documents:'),
+            if (documents.isEmpty)
+              const Text('No supporting document list provided.')
+            else
+              ...documents.map((doc) => Text('• $doc')),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Edit'),
+        ),
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            _submitForm();
+          },
+          child: const Text('Submit'),
+        ),
+      ],
     );
+
+    await showDialog<void>(context: context, builder: (_) => preview);
+  }
+
+  Future<void> _submitForm() async {
+    final purpose = _purposeController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (purpose.isEmpty || description.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please complete the purpose and description.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final documents = _documentsController.text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+
+      final application = await CharacterCertificateService.instance
+          .submitCharacterCertificate(
+            purpose: purpose,
+            description: description,
+            documents: documents
+                .map(
+                  (document) => {
+                    'name': document,
+                    'type': 'supporting_document',
+                  },
+                )
+                .toList(),
+          );
+
+      if (!mounted) return;
+
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Application Submitted'),
+          content: Text(
+            'Your character certificate application has been submitted successfully.\n\nApplication ID: ${application.id}\nStatus: ${CharacterCertificateStatus.timelineLabel(application.status)}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
@@ -258,77 +393,47 @@ class _CharacterCertificateScreenState
                 CustomTextField(
                   controller: _purposeController,
                   labelText: 'Purpose of Certificate',
-                  hintText: 'e.g. Higher studies, visa process, job',
-                  prefixIcon: Icons.note_alt_outlined,
-                  maxLines: 4,
+                  prefixIcon: Icons.help_outline_rounded,
                   validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please describe the purpose'
+                      ? 'Please explain the purpose'
                       : null,
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  'Required Documents',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE0E7F1)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('• Student ID Card'),
-                      SizedBox(height: 8),
-                      Text('• Transcript Copy'),
-                      SizedBox(height: 8),
-                      Text('• Passport size photograph'),
-                    ],
-                  ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  controller: _descriptionController,
+                  labelText: 'Additional Details',
+                  prefixIcon: Icons.description_outlined,
+                  maxLines: 4,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Please tell us more about the request'
+                      : null,
                 ),
                 const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF1FF),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.upload_file_rounded,
-                        color: Color(0xFF0D47A1),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Mock Document Upload',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text('Selected file: Student_ID_Card.pdf'),
-                    ],
-                  ),
+                CustomTextField(
+                  controller: _documentsController,
+                  labelText: 'Supporting Documents',
+                  hintText: 'Student ID Card, transcript, etc.',
+                  prefixIcon: Icons.attach_file_rounded,
                 ),
-                const SizedBox(height: 20),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _declarationAccepted,
-                  onChanged: (value) {
-                    setState(() {
-                      _declarationAccepted = value ?? false;
-                    });
-                  },
-                  title: const Text(
-                    'I confirm that the information provided is correct and complete.',
-                  ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _declarationAccepted,
+                      onChanged: (value) {
+                        setState(() {
+                          _declarationAccepted = value ?? false;
+                        });
+                      },
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'I confirm the information above is accurate and complete.',
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -339,17 +444,14 @@ class _CharacterCertificateScreenState
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.checklist_rounded),
+                        : const Icon(Icons.smart_toy_outlined),
                     label: Text(
-                      _checkingForm ? 'Checking Form...' : 'Check Form with AI',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      _checkingForm ? 'Checking Form...' : 'AI Check',
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
                 if (_aiCheckResult != null) ...[
-                  const SizedBox(height: 12),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -357,25 +459,31 @@ class _CharacterCertificateScreenState
                       color: const Color(0xFFF4F7FB),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      GeminiAssistantService.advisoryNotice,
-                      style: Theme.of(context).textTheme.bodySmall,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          GeminiAssistantService.advisoryNotice,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 8),
+                        ...(((_aiCheckResult!['suggestions'] as List?) ?? [])
+                            .map((item) => Text('• $item'))),
+                      ],
                     ),
                   ),
                 ],
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _submitForm,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _isSubmitting ? null : _previewAndSubmit,
+                        icon: const Icon(Icons.send_rounded),
+                        label: const Text('Submit'),
                       ),
                     ),
-                    child: const Text('Submit Application'),
-                  ),
+                  ],
                 ),
               ],
             ),

@@ -1,0 +1,229 @@
+import 'package:flutter/material.dart';
+
+import '../models/application.dart';
+import '../services/auth_service.dart';
+import '../services/character_certificate_service.dart';
+import '../widgets/status_chip.dart';
+import 'application_details_screen.dart';
+import 'login_screen.dart';
+
+class DSWDirectorDashboardScreen extends StatefulWidget {
+  const DSWDirectorDashboardScreen({super.key});
+
+  @override
+  State<DSWDirectorDashboardScreen> createState() =>
+      _DSWDirectorDashboardScreenState();
+}
+
+class _DSWDirectorDashboardScreenState
+    extends State<DSWDirectorDashboardScreen> {
+  late Future<List<Application>> _queueFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _queueFuture = CharacterCertificateService.instance.getDirectorQueue();
+  }
+
+  void _refreshQueue() {
+    setState(() {
+      _queueFuture = CharacterCertificateService.instance.getDirectorQueue();
+    });
+  }
+
+  Future<void> _handleDecision(Application application, String decision) async {
+    final comment = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: Text(_decisionTitle(decision)),
+          content: TextField(
+            controller: controller,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'Add director comment',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (comment == null) {
+      return;
+    }
+
+    try {
+      if (decision == 'review') {
+        await CharacterCertificateService.instance.reviewApplicationForDirector(
+          application.id,
+        );
+      } else {
+        await CharacterCertificateService.instance.directorDecision(
+          applicationId: application.id,
+          decision: decision,
+          comment: comment.isEmpty ? null : comment,
+        );
+      }
+      _refreshQueue();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  String _decisionTitle(String decision) {
+    switch (decision) {
+      case 'review':
+        return 'Director Review';
+      case 'approve':
+        return 'Approve Application';
+      case 'reject':
+        return 'Reject Application';
+      case 'issue_certificate':
+        return 'Issue Certificate';
+      default:
+        return 'Decision';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('DSW Director Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Logout',
+            onPressed: () async {
+              await AuthService.instance.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
+            },
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: FutureBuilder<List<Application>>(
+          future: _queueFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final applications = snapshot.data ?? const <Application>[];
+            if (applications.isEmpty) {
+              return const Center(
+                child: Text(
+                  'No certificate applications are awaiting director review.',
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: applications.length,
+              itemBuilder: (context, index) {
+                final application = applications[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                application.id,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            StatusChip(label: application.status),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(application.purpose),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Student ID: ${application.studentId}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ApplicationDetailsScreen(
+                                      application: application,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: const Text('View Details'),
+                            ),
+                            const Spacer(),
+                            if (application.status == 'OFFICER_APPROVED')
+                              FilledButton(
+                                onPressed: () =>
+                                    _handleDecision(application, 'review'),
+                                child: const Text('Start Review'),
+                              )
+                            else ...[
+                              TextButton(
+                                onPressed: () =>
+                                    _handleDecision(application, 'reject'),
+                                child: const Text('Reject'),
+                              ),
+                              FilledButton(
+                                onPressed: () => _handleDecision(
+                                  application,
+                                  application.status == 'APPROVED'
+                                      ? 'issue_certificate'
+                                      : 'approve',
+                                ),
+                                child: Text(
+                                  application.status == 'APPROVED'
+                                      ? 'Issue Certificate'
+                                      : 'Approve',
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

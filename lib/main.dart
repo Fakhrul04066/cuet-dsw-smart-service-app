@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'package:flutter/material.dart';
 
-import 'screens/splash_screen.dart';
+import 'firebase_options.dart';
+import 'screens/auth_gate.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -34,7 +34,7 @@ class CUETDSWApp extends StatelessWidget {
           ),
         );
       },
-      home: const SplashScreen(),
+      home: const AuthGate(),
     );
   }
 }

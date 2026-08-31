@@ -28,6 +28,20 @@ class UserService {
     return StudentUser.fromMap(snapshot.data()!, uid: snapshot.id);
   }
 
+  Future<StudentUser?> getUserByStudentId(String studentId) async {
+    final snapshot = await _users
+        .where('studentId', isEqualTo: studentId.trim())
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      return null;
+    }
+
+    final doc = snapshot.docs.first;
+    return StudentUser.fromMap(doc.data(), uid: doc.id);
+  }
+
   Future<void> createUserProfileIfMissing(User user) async {
     final docRef = _users.doc(user.uid);
     final snapshot = await docRef.get();
@@ -44,11 +58,13 @@ class UserService {
       email: user.email ?? '',
       phone: '',
       department: '',
-      level: '',
-      term: '',
+      batch: '',
+      hall: '',
       role: 'student',
       createdAt: now,
       updatedAt: now,
+      level: '',
+      term: '',
     );
 
     await docRef.set(profile.toMap());
@@ -61,11 +77,19 @@ class UserService {
     String? email,
     String? phone,
     String? department,
+    String? batch,
+    String? hall,
+    String? profileImageUrl,
+    String? role,
     String? level,
     String? term,
   }) async {
     final existing = await getUserById(uid);
     final next = existing ?? StudentUser.empty(uid);
+
+    final safeRole = role == null
+        ? next.role
+        : StudentUser.validateStudentRegistrationRole(role) ?? next.role;
 
     final profile = StudentUser(
       uid: next.uid,
@@ -74,11 +98,14 @@ class UserService {
       email: email ?? next.email,
       phone: phone ?? next.phone,
       department: department ?? next.department,
-      level: level ?? next.level,
-      term: term ?? next.term,
-      role: next.role,
+      batch: batch ?? next.batch,
+      hall: hall ?? next.hall,
+      role: safeRole,
+      profileImageUrl: profileImageUrl ?? next.profileImageUrl,
       createdAt: next.createdAt,
       updatedAt: DateTime.now(),
+      level: level ?? next.level,
+      term: term ?? next.term,
     );
 
     await _users.doc(uid).set(profile.toMap(), SetOptions(merge: true));

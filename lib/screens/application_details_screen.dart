@@ -1,16 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../models/application_model.dart';
+import '../models/application.dart';
+import '../services/character_certificate_service.dart';
 import '../widgets/status_chip.dart';
 
 class ApplicationDetailsScreen extends StatelessWidget {
-  final ApplicationModel application;
+  final Application application;
 
   const ApplicationDetailsScreen({super.key, required this.application});
 
   @override
   Widget build(BuildContext context) {
+    final timeline = CharacterCertificateService.instance
+        .statusTimelineForApplication(application.status);
+
+    final documentNames = application.documents
+        .map(
+          (document) => (document['name'] ?? document['fileName'] ?? 'Document')
+              .toString(),
+        )
+        .toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Application Details')),
       body: SafeArea(
@@ -23,7 +33,7 @@ class ApplicationDetailsScreen extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      application.trackingNumber,
+                      application.id,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                   ),
@@ -32,74 +42,81 @@ class ApplicationDetailsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                application.serviceType,
+                application.type,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               _InfoCard(
                 title: 'Application Summary',
                 children: [
-                  _DetailRow(label: 'Submission Date', value: application.date),
+                  _DetailRow(
+                    label: 'Submission Date',
+                    value: application.createdAt.toLocal().toString(),
+                  ),
                   _DetailRow(
                     label: 'Current Status',
-                    value: application.status,
+                    value: CharacterCertificateStatus.timelineLabel(
+                      application.status,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               _InfoCard(
                 title: 'Submitted Information',
-                children: application.submittedInformation.entries
-                    .map(
-                      (entry) =>
-                          _DetailRow(label: entry.key, value: entry.value),
-                    )
-                    .toList(),
+                children: [
+                  _DetailRow(label: 'Student ID', value: application.studentId),
+                  _DetailRow(label: 'Purpose', value: application.purpose),
+                  _DetailRow(
+                    label: 'Description',
+                    value: application.description,
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               _InfoCard(
                 title: 'Attached Documents',
-                children: application.documentNames
-                    .map(
-                      (name) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.attach_file_rounded, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(name)),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
+                children: documentNames.isEmpty
+                    ? [const Text('No documents attached.')]
+                    : documentNames
+                          .map(
+                            (name) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.attach_file_rounded,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(name)),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
               ),
               const SizedBox(height: 16),
               _InfoCard(
                 title: 'Official Notes',
                 children: [
                   Text(
-                    application.officialNotes ??
+                    application.officerComment ??
+                        application.directorComment ??
                         'No notes available at this time.',
                   ),
                 ],
               ),
-              if (application.finalDecision != null) ...[
-                const SizedBox(height: 16),
-                _InfoCard(
-                  title: 'Final Decision',
-                  children: [Text(application.finalDecision!)],
-                ),
-              ],
               const SizedBox(height: 20),
               Text(
                 'Status Timeline',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              ...List.generate(application.statusHistory.length, (index) {
-                final step = application.statusHistory[index];
-                final isLast = index == application.statusHistory.length - 1;
+              ...List.generate(timeline.length, (index) {
+                final step = timeline[index];
+                final isLast = index == timeline.length - 1;
+                final completed = index <= timeline.indexOf(application.status);
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -109,7 +126,9 @@ class ApplicationDetailsScreen extends StatelessWidget {
                           width: 14,
                           height: 14,
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
+                            color: completed
+                                ? Theme.of(context).colorScheme.primary
+                                : const Color(0xFFD5DCE8),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -129,7 +148,7 @@ class ApplicationDetailsScreen extends StatelessWidget {
                           top: 0,
                         ),
                         child: Text(
-                          step,
+                          CharacterCertificateStatus.timelineLabel(step),
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                       ),
@@ -137,49 +156,6 @@ class ApplicationDetailsScreen extends StatelessWidget {
                   ],
                 );
               }),
-              if (application.serviceType == 'Character Certificate' &&
-                  application.status == 'Approved') ...[
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final url = application.approvedCertificateUrl;
-                      if (url == null || url.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'The approved certificate is not available yet.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
-                      final uri = Uri.parse(url);
-                      if (!await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      )) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'The certificate could not be opened right now.',
-                              ),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('Download Approved Certificate'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
