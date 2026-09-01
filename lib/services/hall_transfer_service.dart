@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/application.dart';
@@ -280,6 +282,10 @@ class HallTransferService {
     UserIdentity? actor,
     String? actorRole,
   }) async {
+    developer.log(
+      'CHANGE_STATUS_START: applicationId=${application.id}, toStatus=$status, actorRole=$actorRole',
+    );
+
     final updated = application.copyWith(
       status: status,
       officerComment: actorRole == 'dsw_officer'
@@ -290,43 +296,98 @@ class HallTransferService {
           : application.directorComment,
       updatedAt: DateTime.now(),
     );
-    await _applicationService.updateApplication(application.id, updated);
+
+    try {
+      developer.log(
+        'CHANGE_STATUS_APPLICATION_UPDATE_START: applicationId=${application.id}',
+      );
+      await _applicationService.updateApplication(application.id, updated);
+      developer.log(
+        'CHANGE_STATUS_APPLICATION_UPDATE_OK: applicationId=${application.id}',
+      );
+    } catch (e) {
+      developer.log(
+        'CHANGE_STATUS_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e',
+      );
+      rethrow;
+    }
+
     final actorId =
         actor?.uid ?? FirebaseAuth.instance.currentUser?.uid ?? 'system';
-    await _recordHistory(
-      applicationId: application.id,
-      action: status,
-      performedBy: actorId,
-      comment: comment,
-    );
-    if (application.studentUid.isNotEmpty) {
-      await NotificationService.instance.createNotification(
-        userUid: application.studentUid,
-        title: 'Application status updated',
-        message: 'Your hall transfer application is now $status.',
-        type: 'application_status',
-        referenceId: application.id,
+
+    try {
+      developer.log(
+        'CHANGE_STATUS_HISTORY_WRITE_START: applicationId=${application.id}',
       );
-    }
-    if (actor != null && actorRole != null) {
-      await AuditLogService.instance.addAuditLog(
-        AuditLog(
-          id: '',
-          actorId: actor.uid,
-          actorRole: actorRole,
-          action: 'hall_transfer_$auditAction',
-          targetType: 'application',
-          targetId: application.id,
-          timestamp: DateTime.now(),
-          details: {
-            'applicationId': application.id,
-            'fromStatus': application.status,
-            'toStatus': status,
-            'comment': comment,
-          },
-        ),
+      await _recordHistory(
+        applicationId: application.id,
+        action: status,
+        performedBy: actorId,
+        comment: comment,
       );
+      developer.log(
+        'CHANGE_STATUS_HISTORY_WRITE_OK: applicationId=${application.id}',
+      );
+    } catch (e) {
+      developer.log('CHANGE_STATUS_HISTORY_WRITE_FAILED: ${e.runtimeType} $e');
+      rethrow;
     }
+
+    try {
+      if (application.studentUid.isNotEmpty) {
+        developer.log(
+          'CHANGE_STATUS_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
+        );
+        await NotificationService.instance.createNotification(
+          userUid: application.studentUid,
+          title: 'Application status updated',
+          message: 'Your hall transfer application is now $status.',
+          type: 'application_status',
+          referenceId: application.id,
+        );
+        developer.log(
+          'CHANGE_STATUS_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
+        );
+      }
+    } catch (e) {
+      developer.log(
+        'CHANGE_STATUS_NOTIFICATION_WRITE_FAILED: ${e.runtimeType} $e',
+      );
+      rethrow;
+    }
+
+    try {
+      if (actor != null && actorRole != null) {
+        developer.log(
+          'CHANGE_STATUS_AUDIT_WRITE_START: applicationId=${application.id}',
+        );
+        await AuditLogService.instance.addAuditLog(
+          AuditLog(
+            id: '',
+            actorId: actor.uid,
+            actorRole: actorRole,
+            action: 'hall_transfer_$auditAction',
+            targetType: 'application',
+            targetId: application.id,
+            timestamp: DateTime.now(),
+            details: {
+              'applicationId': application.id,
+              'fromStatus': application.status,
+              'toStatus': status,
+              'comment': comment,
+            },
+          ),
+        );
+        developer.log(
+          'CHANGE_STATUS_AUDIT_WRITE_OK: applicationId=${application.id}',
+        );
+      }
+    } catch (e) {
+      developer.log('CHANGE_STATUS_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
+      rethrow;
+    }
+
+    developer.log('CHANGE_STATUS_OK: applicationId=${application.id}');
     return updated;
   }
 

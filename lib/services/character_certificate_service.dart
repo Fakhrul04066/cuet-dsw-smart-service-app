@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/application.dart';
@@ -335,6 +337,10 @@ class CharacterCertificateService {
     required String decision,
     String? comment,
   }) async {
+    developer.log(
+      'DIRECTOR_DECISION_START: applicationId=$applicationId, decision=$decision',
+    );
+
     if (decision == 'reject' && (comment == null || comment.trim().isEmpty)) {
       throw StateError('A reason is required for this director decision.');
     }
@@ -368,42 +374,82 @@ class CharacterCertificateService {
       updatedAt: DateTime.now(),
     );
 
-    await _applicationService.updateApplication(
-      applicationId,
-      updatedApplication,
-    );
-
-    await _recordHistory(
-      applicationId: applicationId,
-      action: nextStatus,
-      performedBy: actor.uid,
-      comment: comment ?? _directorDecisionMessage(decision),
-    );
-    if (application.studentUid.isNotEmpty) {
-      await NotificationService.instance.createNotification(
-        userUid: application.studentUid,
-        title: 'Application status updated',
-        message: 'Your character certificate application is now $nextStatus.',
-        type: 'application_status',
-        referenceId: applicationId,
+    try {
+      developer.log(
+        'DIRECTOR_APPLICATION_UPDATE_START: applicationId=$applicationId',
       );
+      await _applicationService.updateApplication(
+        applicationId,
+        updatedApplication,
+      );
+      developer.log(
+        'DIRECTOR_APPLICATION_UPDATE_OK: applicationId=$applicationId',
+      );
+    } catch (e) {
+      developer.log('DIRECTOR_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e');
+      rethrow;
     }
 
-    await _recordAudit(
-      actorId: actor.uid,
-      actorRole: 'dsw_director',
-      action: 'character_certificate_director_$decision',
-      targetType: 'application',
-      targetId: applicationId,
-      details: {
-        'applicationId': applicationId,
-        'decision': decision,
-        'fromStatus': application.status,
-        'toStatus': nextStatus,
-        'comment': comment ?? _directorDecisionMessage(decision),
-      },
-    );
+    try {
+      developer.log(
+        'DIRECTOR_HISTORY_WRITE_START: applicationId=$applicationId, action=$nextStatus',
+      );
+      await _recordHistory(
+        applicationId: applicationId,
+        action: nextStatus,
+        performedBy: actor.uid,
+        comment: comment ?? _directorDecisionMessage(decision),
+      );
+      developer.log('DIRECTOR_HISTORY_WRITE_OK: applicationId=$applicationId');
+    } catch (e) {
+      developer.log('DIRECTOR_HISTORY_WRITE_FAILED: ${e.runtimeType} $e');
+      rethrow;
+    }
 
+    try {
+      if (application.studentUid.isNotEmpty) {
+        developer.log(
+          'DIRECTOR_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
+        );
+        await NotificationService.instance.createNotification(
+          userUid: application.studentUid,
+          title: 'Application status updated',
+          message: 'Your character certificate application is now $nextStatus.',
+          type: 'application_status',
+          referenceId: applicationId,
+        );
+        developer.log(
+          'DIRECTOR_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
+        );
+      }
+    } catch (e) {
+      developer.log('DIRECTOR_NOTIFICATION_WRITE_FAILED: ${e.runtimeType} $e');
+      rethrow;
+    }
+
+    try {
+      developer.log('DIRECTOR_AUDIT_WRITE_START: applicationId=$applicationId');
+      await _recordAudit(
+        actorId: actor.uid,
+        actorRole: 'dsw_director',
+        action: 'character_certificate_director_$decision',
+        targetType: 'application',
+        targetId: applicationId,
+        details: {
+          'applicationId': applicationId,
+          'decision': decision,
+          'fromStatus': application.status,
+          'toStatus': nextStatus,
+          'comment': comment ?? _directorDecisionMessage(decision),
+        },
+      );
+      developer.log('DIRECTOR_AUDIT_WRITE_OK: applicationId=$applicationId');
+    } catch (e) {
+      developer.log('DIRECTOR_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
+      rethrow;
+    }
+
+    developer.log('DIRECTOR_DECISION_OK: applicationId=$applicationId');
     return updatedApplication;
   }
 
@@ -445,6 +491,8 @@ class CharacterCertificateService {
   }
 
   Future<Application> reviewApplicationForDirector(String applicationId) async {
+    developer.log('DIRECTOR_REVIEW_START: applicationId=$applicationId');
+
     final actor = FirebaseAuth.instance.currentUser;
     if (actor == null) throw StateError('No authenticated director found.');
     final profile = await UserService.instance.getUserById(actor.uid);
@@ -458,24 +506,68 @@ class CharacterCertificateService {
         status: CharacterCertificateStatus.directorReview,
         updatedAt: DateTime.now(),
       );
-      await _applicationService.updateApplication(applicationId, updated);
-      await _recordHistory(
-        applicationId: applicationId,
-        action: CharacterCertificateStatus.directorReview,
-        performedBy: actor.uid,
-        comment: 'Application moved to director review.',
-      );
-      await _recordAudit(
-        actorId: actor.uid,
-        actorRole: 'dsw_director',
-        action: 'DIRECTOR_REVIEW_STARTED',
-        targetType: 'application',
-        targetId: applicationId,
-        details: {
-          'fromStatus': application.status,
-          'toStatus': CharacterCertificateStatus.directorReview,
-        },
-      );
+
+      try {
+        developer.log(
+          'DIRECTOR_REVIEW_APPLICATION_UPDATE_START: applicationId=$applicationId',
+        );
+        await _applicationService.updateApplication(applicationId, updated);
+        developer.log(
+          'DIRECTOR_REVIEW_APPLICATION_UPDATE_OK: applicationId=$applicationId',
+        );
+      } catch (e) {
+        developer.log(
+          'DIRECTOR_REVIEW_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e',
+        );
+        rethrow;
+      }
+
+      try {
+        developer.log(
+          'DIRECTOR_REVIEW_HISTORY_WRITE_START: applicationId=$applicationId',
+        );
+        await _recordHistory(
+          applicationId: applicationId,
+          action: CharacterCertificateStatus.directorReview,
+          performedBy: actor.uid,
+          comment: 'Application moved to director review.',
+        );
+        developer.log(
+          'DIRECTOR_REVIEW_HISTORY_WRITE_OK: applicationId=$applicationId',
+        );
+      } catch (e) {
+        developer.log(
+          'DIRECTOR_REVIEW_HISTORY_WRITE_FAILED: ${e.runtimeType} $e',
+        );
+        rethrow;
+      }
+
+      try {
+        developer.log(
+          'DIRECTOR_REVIEW_AUDIT_WRITE_START: applicationId=$applicationId',
+        );
+        await _recordAudit(
+          actorId: actor.uid,
+          actorRole: 'dsw_director',
+          action: 'DIRECTOR_REVIEW_STARTED',
+          targetType: 'application',
+          targetId: applicationId,
+          details: {
+            'fromStatus': application.status,
+            'toStatus': CharacterCertificateStatus.directorReview,
+          },
+        );
+        developer.log(
+          'DIRECTOR_REVIEW_AUDIT_WRITE_OK: applicationId=$applicationId',
+        );
+      } catch (e) {
+        developer.log(
+          'DIRECTOR_REVIEW_AUDIT_WRITE_FAILED: ${e.runtimeType} $e',
+        );
+        rethrow;
+      }
+
+      developer.log('DIRECTOR_REVIEW_OK: applicationId=$applicationId');
       return updated;
     }
     return application;

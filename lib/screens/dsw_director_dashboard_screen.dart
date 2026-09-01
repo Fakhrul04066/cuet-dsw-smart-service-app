@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/application.dart';
 import '../models/complaint.dart';
@@ -255,9 +256,13 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
       _refreshQueue();
     } catch (error) {
       if (mounted) {
+        String errorMessage = error.toString();
+        if (error is FirebaseException) {
+          errorMessage = 'Firebase Error [${error.code}]: ${error.message}';
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
       }
     }
   }

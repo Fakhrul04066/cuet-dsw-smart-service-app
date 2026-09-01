@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/complaint.dart';
@@ -250,11 +251,14 @@ class ComplaintHistoryScreen extends StatelessWidget {
           ),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return Center(
-                child: Text(
-                  'Could not load your complaints: ${snapshot.error}',
-                ),
-              );
+              String errorMessage = 'Could not load your complaints';
+              if (snapshot.error is FirebaseException) {
+                final e = snapshot.error as FirebaseException;
+                errorMessage = 'Firebase Error [${e.code}]: ${e.message}';
+              } else {
+                errorMessage = 'Error: ${snapshot.error}';
+              }
+              return Center(child: Text(errorMessage));
             }
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
