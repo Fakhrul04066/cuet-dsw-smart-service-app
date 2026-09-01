@@ -32,12 +32,12 @@ class AppNotification {
 
     return AppNotification(
       id: id ?? (data['id'] ?? '').toString(),
-      userId: (data['userId'] ?? '').toString(),
+      userId: (data['userId'] ?? data['userUid'] ?? '').toString(),
       title: (data['title'] ?? '').toString(),
       message: (data['message'] ?? '').toString(),
       type: (data['type'] ?? '').toString(),
-      relatedId: (data['relatedId'] ?? '').toString(),
-      read: data['read'] == true,
+      relatedId: (data['relatedId'] ?? data['referenceId'] ?? '').toString(),
+      read: data['read'] == true || data['isRead'] == true,
       createdAt: _toDateTime(data['createdAt'], fallback: now),
     );
   }
@@ -45,12 +45,12 @@ class AppNotification {
   Map<String, dynamic> toFirestore({bool useServerTimestamps = false}) {
     return {
       'id': id,
-      'userId': userId,
+      'userUid': userId,
       'title': title,
       'message': message,
       'type': type,
-      'relatedId': relatedId,
-      'read': read,
+      'referenceId': relatedId,
+      'isRead': read,
       'createdAt': useServerTimestamps
           ? FieldValue.serverTimestamp()
           : Timestamp.fromDate(createdAt),

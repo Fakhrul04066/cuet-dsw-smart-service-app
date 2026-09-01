@@ -277,6 +277,39 @@ class _StaffComplaintDetailsState extends State<_StaffComplaintDetails> {
         const SizedBox(height: 16),
         Text(widget.complaint.description),
         const SizedBox(height: 16),
+        if (widget.complaint.aiSummary != null ||
+            widget.complaint.aiSuggestedCategory != null ||
+            widget.complaint.aiSuggestedPriority != null ||
+            widget.complaint.aiSuggestedDepartment != null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI Suggestion',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  if (widget.complaint.aiSummary != null)
+                    Text('Summary: ${widget.complaint.aiSummary}'),
+                  if (widget.complaint.aiSuggestedCategory != null)
+                    Text(
+                      'Suggested Category: ${widget.complaint.aiSuggestedCategory}',
+                    ),
+                  if (widget.complaint.aiSuggestedPriority != null)
+                    Text(
+                      'Suggested Priority: ${widget.complaint.aiSuggestedPriority}',
+                    ),
+                  if (widget.complaint.aiSuggestedDepartment != null)
+                    Text(
+                      'Suggested Department: ${widget.complaint.aiSuggestedDepartment}',
+                    ),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
         Text('Student ID: ${widget.complaint.studentId}'),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(

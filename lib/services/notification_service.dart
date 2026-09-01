@@ -18,15 +18,25 @@ class NotificationService {
       return const Stream.empty();
     }
 
-    return _notifications
-        .where('userUid', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => NotificationModel.fromMap(doc.data(), id: doc.id))
-              .toList(),
-        );
+    return _notifications.where('userUid', isEqualTo: uid).snapshots().map((
+      snapshot,
+    ) {
+      final notifications = snapshot.docs
+          .map((doc) => NotificationModel.fromMap(doc.data(), id: doc.id))
+          .toList();
+      notifications.sort(
+        (a, b) => (b.createdAt ?? Timestamp(0, 0)).compareTo(
+          a.createdAt ?? Timestamp(0, 0),
+        ),
+      );
+      return notifications;
+    });
+  }
+
+  Stream<int> streamUnreadCount() {
+    return streamNotificationsForCurrentUser().map(
+      (items) => items.where((item) => !item.isRead).length,
+    );
   }
 
   Future<void> createNotification({
@@ -47,6 +57,32 @@ class NotificationService {
       'isRead': false,
       'createdAt': Timestamp.fromDate(now),
     });
+  }
+
+  Future<void> createForCurrentUserIfMissing({
+    required String title,
+    required String message,
+    required String type,
+    required String referenceId,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final existing = await _notifications
+        .where('userUid', isEqualTo: uid)
+        .get();
+    final alreadyExists = existing.docs.any((doc) {
+      final data = doc.data();
+      return data['type'] == type && data['referenceId'] == referenceId;
+    });
+    if (!alreadyExists) {
+      await createNotification(
+        userUid: uid,
+        title: title,
+        message: message,
+        type: type,
+        referenceId: referenceId,
+      );
+    }
   }
 
   Future<void> markAsRead(String notificationId) async {

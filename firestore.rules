@@ -95,6 +95,7 @@ service cloud.firestore {
       allow create: if signedIn() &&
         isStudent() &&
         request.resource.data.studentId == currentStudentId() &&
+        request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'SUBMITTED' &&
         request.resource.data.documents is list &&
         (
@@ -122,17 +123,20 @@ service cloud.firestore {
           isStudent() &&
           resource.data.studentId == currentStudentId() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.type == resource.data.type &&
-          request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'CORRECTION_REQUIRED']
+          request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW']
         ) ||
         (
           isOfficer() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'CORRECTION_REQUIRED', 'OFFICER_APPROVED']
         ) ||
         (
           isDirector() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.status in ['OFFICER_APPROVED', 'DIRECTOR_REVIEW', 'APPROVED', 'REJECTED', 'CERTIFICATE_ISSUED']
         )
       );
@@ -144,6 +148,7 @@ service cloud.firestore {
       allow create: if signedIn() &&
         isStudent() &&
         request.resource.data.studentId == currentStudentId() &&
+        request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'SUBMITTED' &&
         request.resource.data.title is string &&
         request.resource.data.description is string &&
@@ -161,17 +166,20 @@ service cloud.firestore {
           isStudent() &&
           resource.data.studentId == currentStudentId() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.status == resource.data.status &&
           request.resource.data.status == 'SUBMITTED'
         ) ||
         (
           isOfficer() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
         ) ||
         (
           isDirector() &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.studentUid == resource.data.studentUid &&
           request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
         )
       );
@@ -192,18 +200,36 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow create: if signedIn() &&
-        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.userUid is string &&
         request.resource.data.title is string &&
         request.resource.data.message is string &&
-        request.resource.data.read is bool;
+        request.resource.data.type is string &&
+        request.resource.data.referenceId is string &&
+        request.resource.data.isRead == false &&
+        (
+          request.resource.data.userUid == request.auth.uid ||
+          (
+            isStaff() &&
+            request.resource.data.type == 'application_status' &&
+            exists(/databases/$(database)/documents/applications/$(request.resource.data.referenceId)) &&
+            get(/databases/$(database)/documents/applications/$(request.resource.data.referenceId)).data.studentUid == request.resource.data.userUid
+          ) ||
+          (
+            isStaff() &&
+            request.resource.data.type == 'complaint_status' &&
+            exists(/databases/$(database)/documents/complaints/$(request.resource.data.referenceId)) &&
+            get(/databases/$(database)/documents/complaints/$(request.resource.data.referenceId)).data.studentUid == request.resource.data.userUid
+          )
+        );
 
       allow read: if signedIn() &&
-        request.auth.uid == resource.data.userId;
+        request.auth.uid == resource.data.userUid;
 
       allow update: if signedIn() &&
-        request.auth.uid == resource.data.userId &&
-        request.resource.data.userId == resource.data.userId &&
-        request.resource.data.read is bool;
+        request.auth.uid == resource.data.userUid &&
+        request.resource.data.userUid == resource.data.userUid &&
+        request.resource.data.isRead is bool &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
 
       allow delete: if false;
     }
@@ -224,11 +250,14 @@ service cloud.firestore {
           isStudent() &&
           applicationDoc(request.resource.data.applicationId) != null &&
           applicationDoc(request.resource.data.applicationId).data.studentId == currentStudentId() &&
-          applicationDoc(request.resource.data.applicationId).data.status == 'SUBMITTED' &&
+          (
+            (request.resource.data.action == 'SUBMITTED' && applicationDoc(request.resource.data.applicationId).data.status == 'SUBMITTED') ||
+            (request.resource.data.action == 'STUDENT_RESUBMITTED' && applicationDoc(request.resource.data.applicationId).data.status == 'OFFICER_REVIEW')
+          ) &&
           request.resource.data.applicationId is string &&
           request.resource.data.applicationId == request.resource.data.applicationId &&
           request.resource.data.performedBy == request.auth.uid &&
-          request.resource.data.action == 'SUBMITTED' &&
+          request.resource.data.action in ['SUBMITTED', 'STUDENT_RESUBMITTED'] &&
           request.resource.data.comment is string &&
           request.resource.data.timestamp is timestamp
         ) ||

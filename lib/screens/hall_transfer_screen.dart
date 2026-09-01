@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/auth_service.dart';
 import '../services/hall_transfer_service.dart';
+import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class HallTransferScreen extends StatefulWidget {
@@ -22,6 +23,10 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
   bool _declarationAccepted = false;
   bool _checkingForm = false;
   bool _isSubmitting = false;
+  bool _isUploading = false;
+  double _uploadProgress = 0;
+  late final String _applicationId;
+  final _uploadedDocuments = <Map<String, dynamic>>[];
   Map<String, dynamic>? _aiCheckResult;
 
   @override
@@ -37,6 +42,7 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
   @override
   void initState() {
     super.initState();
+    _applicationId = DateTime.now().microsecondsSinceEpoch.toString();
     _loadStudentProfile();
   }
 
@@ -153,9 +159,8 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
         currentHall: _currentHallController.text.trim(),
         requestedHall: _preferredHallController.text.trim(),
         reason: _reasonController.text.trim(),
-        documents: const [
-          {'name': 'hall_transfer_support.pdf', 'type': 'supporting_document'},
-        ],
+        applicationId: _applicationId,
+        documents: _uploadedDocuments,
       );
 
       if (!mounted) return;
@@ -185,6 +190,38 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _pickDocuments() async {
+    if (!FirebaseStorageService.uploadsEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File upload is not available in this demo version.'),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0;
+    });
+    try {
+      final files = await FirebaseStorageService.instance.pickAndUpload(
+        folder: 'applications/$_applicationId/documents',
+        onProgress: (progress) => setState(() => _uploadProgress = progress),
+      );
+      _uploadedDocuments.addAll(files);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -274,11 +311,33 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Mock Evidence Upload',
+                        'Firebase Storage Upload',
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 6),
-                      const Text('Selected file: hall_transfer_support.pdf'),
+                      Text(
+                        _uploadedDocuments.isEmpty
+                            ? 'No files selected.'
+                            : '${_uploadedDocuments.length} file(s) selected.',
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _isUploading ? null : _pickDocuments,
+                        icon: _isUploading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined),
+                        label: Text(
+                          _isUploading
+                              ? 'Uploading ${(_uploadProgress * 100).round()}%'
+                              : 'Choose files',
+                        ),
+                      ),
                     ],
                   ),
                 ),

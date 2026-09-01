@@ -1,6 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/application.dart';
+import '../models/application_history.dart';
+import 'application_history_service.dart';
+import 'user_service.dart';
 
 class ApplicationService {
   ApplicationService._();
@@ -54,6 +58,50 @@ class ApplicationService {
 
   Future<void> deleteApplication(String id) async {
     await _applications.doc(id).delete();
+  }
+
+  Future<void> resubmitApplication(
+    Application application, {
+    required String purpose,
+    required String description,
+    String? currentHall,
+    String? requestedHall,
+    String? reason,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('No authenticated student found.');
+    final profile = await UserService.instance.getUserById(user.uid);
+    if (profile == null || profile.studentId != application.studentId) {
+      throw StateError('You can only resubmit your own application.');
+    }
+    if (application.status != 'CORRECTION_REQUIRED') {
+      throw StateError(
+        'Only applications requiring correction can be resubmitted.',
+      );
+    }
+    final fields = <String, dynamic>{
+      'purpose': purpose,
+      'description': description,
+      'status': 'OFFICER_REVIEW',
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (application.type == 'hall_transfer') {
+      fields['currentHall'] = currentHall ?? application.currentHall ?? '';
+      fields['requestedHall'] =
+          requestedHall ?? application.requestedHall ?? '';
+      fields['reason'] = reason ?? application.reason ?? '';
+    }
+    await _applications.doc(application.id).update(fields);
+    await ApplicationHistoryService.instance.addHistoryEntry(
+      ApplicationHistory(
+        id: '',
+        applicationId: application.id,
+        action: 'STUDENT_RESUBMITTED',
+        performedBy: user.uid,
+        comment: 'Student resubmitted the application after correction.',
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   Stream<List<Application>> streamApplicationsForStudent(String studentId) {

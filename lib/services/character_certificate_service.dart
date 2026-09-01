@@ -8,6 +8,7 @@ import 'application_history_service.dart';
 import 'application_service.dart';
 import 'audit_log_service.dart';
 import 'user_service.dart';
+import 'notification_service.dart';
 
 class CharacterCertificateStatus {
   static const String submitted = 'SUBMITTED';
@@ -132,6 +133,7 @@ class CharacterCertificateService {
   Future<Application> submitCharacterCertificate({
     required String purpose,
     required String description,
+    String? applicationId,
     List<Map<String, dynamic>> documents = const [],
   }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -153,7 +155,8 @@ class CharacterCertificateService {
     }
 
     final application = Application(
-      id: '',
+      id: applicationId ?? '',
+      studentUid: currentUser.uid,
       type: 'character_certificate',
       studentId: studentProfile.studentId,
       status: CharacterCertificateStatus.submitted,
@@ -164,16 +167,23 @@ class CharacterCertificateService {
       documents: documents,
     );
 
-    final applicationId = await _applicationService.createApplication(
+    final createdApplicationId = await _applicationService.createApplication(
       application,
     );
-    final savedApplication = application.copyWith(id: applicationId);
+    final savedApplication = application.copyWith(id: createdApplicationId);
 
     await _recordHistory(
-      applicationId: applicationId,
+      applicationId: createdApplicationId,
       action: CharacterCertificateStatus.submitted,
       performedBy: currentUser.uid,
       comment: 'Student submitted the character certificate application.',
+    );
+    await NotificationService.instance.createNotification(
+      userUid: currentUser.uid,
+      title: 'Application submitted',
+      message: 'Your character certificate application was submitted.',
+      type: 'application_submitted',
+      referenceId: createdApplicationId,
     );
 
     return savedApplication;
@@ -245,6 +255,10 @@ class CharacterCertificateService {
     required String decision,
     String? comment,
   }) async {
+    if ((decision == 'request_correction' || decision == 'reject') &&
+        (comment == null || comment.trim().isEmpty)) {
+      throw StateError('A reason is required for this officer decision.');
+    }
     final actor = FirebaseAuth.instance.currentUser;
     if (actor == null) {
       throw StateError('No authenticated officer found.');
@@ -288,6 +302,15 @@ class CharacterCertificateService {
       performedBy: actor.uid,
       comment: comment ?? _officerDecisionMessage(decision),
     );
+    if (application.studentUid.isNotEmpty) {
+      await NotificationService.instance.createNotification(
+        userUid: application.studentUid,
+        title: 'Application status updated',
+        message: 'Your character certificate application is now $nextStatus.',
+        type: 'application_status',
+        referenceId: applicationId,
+      );
+    }
 
     await _recordAudit(
       actorId: actor.uid,
@@ -312,6 +335,9 @@ class CharacterCertificateService {
     required String decision,
     String? comment,
   }) async {
+    if (decision == 'reject' && (comment == null || comment.trim().isEmpty)) {
+      throw StateError('A reason is required for this director decision.');
+    }
     final actor = FirebaseAuth.instance.currentUser;
     if (actor == null) {
       throw StateError('No authenticated director found.');
@@ -353,6 +379,15 @@ class CharacterCertificateService {
       performedBy: actor.uid,
       comment: comment ?? _directorDecisionMessage(decision),
     );
+    if (application.studentUid.isNotEmpty) {
+      await NotificationService.instance.createNotification(
+        userUid: application.studentUid,
+        title: 'Application status updated',
+        message: 'Your character certificate application is now $nextStatus.',
+        type: 'application_status',
+        referenceId: applicationId,
+      );
+    }
 
     await _recordAudit(
       actorId: actor.uid,
@@ -373,6 +408,13 @@ class CharacterCertificateService {
   }
 
   Future<Application> reviewApplicationForOfficer(String applicationId) async {
+    final actor = FirebaseAuth.instance.currentUser;
+    if (actor == null) throw StateError('No authenticated officer found.');
+    final profile = await UserService.instance.getUserById(actor.uid);
+    if (profile == null ||
+        StudentUser.normalizeRole(profile.role) != 'dsw_officer') {
+      throw StateError('Only DSW officers can start application review.');
+    }
     final application = await getApplicationById(applicationId);
     if (application.status == CharacterCertificateStatus.submitted) {
       final updated = application.copyWith(
@@ -383,8 +425,19 @@ class CharacterCertificateService {
       await _recordHistory(
         applicationId: applicationId,
         action: CharacterCertificateStatus.officerReview,
-        performedBy: FirebaseAuth.instance.currentUser?.uid ?? 'system',
+        performedBy: actor.uid,
         comment: 'Application moved to officer review.',
+      );
+      await _recordAudit(
+        actorId: actor.uid,
+        actorRole: 'dsw_officer',
+        action: 'OFFICER_REVIEW_STARTED',
+        targetType: 'application',
+        targetId: applicationId,
+        details: {
+          'fromStatus': application.status,
+          'toStatus': CharacterCertificateStatus.officerReview,
+        },
       );
       return updated;
     }
@@ -392,6 +445,13 @@ class CharacterCertificateService {
   }
 
   Future<Application> reviewApplicationForDirector(String applicationId) async {
+    final actor = FirebaseAuth.instance.currentUser;
+    if (actor == null) throw StateError('No authenticated director found.');
+    final profile = await UserService.instance.getUserById(actor.uid);
+    if (profile == null ||
+        StudentUser.normalizeRole(profile.role) != 'dsw_director') {
+      throw StateError('Only DSW directors can start application review.');
+    }
     final application = await getApplicationById(applicationId);
     if (application.status == CharacterCertificateStatus.officerApproved) {
       final updated = application.copyWith(
@@ -402,8 +462,19 @@ class CharacterCertificateService {
       await _recordHistory(
         applicationId: applicationId,
         action: CharacterCertificateStatus.directorReview,
-        performedBy: FirebaseAuth.instance.currentUser?.uid ?? 'system',
+        performedBy: actor.uid,
         comment: 'Application moved to director review.',
+      );
+      await _recordAudit(
+        actorId: actor.uid,
+        actorRole: 'dsw_director',
+        action: 'DIRECTOR_REVIEW_STARTED',
+        targetType: 'application',
+        targetId: applicationId,
+        details: {
+          'fromStatus': application.status,
+          'toStatus': CharacterCertificateStatus.directorReview,
+        },
       );
       return updated;
     }

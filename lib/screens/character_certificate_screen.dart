@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/ai_assistant_service.dart';
 import '../services/auth_service.dart';
 import '../services/character_certificate_service.dart';
+import '../services/firebase_storage_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class CharacterCertificateScreen extends StatefulWidget {
@@ -29,11 +30,16 @@ class _CharacterCertificateScreenState
   bool _declarationAccepted = false;
   bool _checkingForm = false;
   bool _isSubmitting = false;
+  bool _isUploading = false;
+  double _uploadProgress = 0;
+  final _uploadedDocuments = <Map<String, dynamic>>[];
+  late final String _applicationId;
   Map<String, dynamic>? _aiCheckResult;
 
   @override
   void initState() {
     super.initState();
+    _applicationId = DateTime.now().microsecondsSinceEpoch.toString();
     _loadStudentProfile();
   }
 
@@ -242,20 +248,23 @@ class _CharacterCertificateScreenState
           .split(',')
           .map((item) => item.trim())
           .where((item) => item.isNotEmpty)
+          .where(
+            (item) =>
+                !_uploadedDocuments.any((file) => file['fileName'] == item),
+          )
           .toList();
 
       final application = await CharacterCertificateService.instance
           .submitCharacterCertificate(
             purpose: purpose,
             description: description,
-            documents: documents
-                .map(
-                  (document) => {
-                    'name': document,
-                    'type': 'supporting_document',
-                  },
-                )
-                .toList(),
+            applicationId: _applicationId,
+            documents: [
+              ..._uploadedDocuments,
+              ...documents.map(
+                (document) => {'name': document, 'type': 'supporting_document'},
+              ),
+            ],
           );
 
       if (!mounted) return;
@@ -288,6 +297,41 @@ class _CharacterCertificateScreenState
       if (mounted) {
         setState(() => _isSubmitting = false);
       }
+    }
+  }
+
+  Future<void> _pickDocuments() async {
+    if (!FirebaseStorageService.uploadsEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File upload is not available in this demo version.'),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0;
+    });
+    try {
+      final files = await FirebaseStorageService.instance.pickAndUpload(
+        folder: 'applications/$_applicationId/documents',
+        onProgress: (progress) => setState(() => _uploadProgress = progress),
+      );
+      _uploadedDocuments.addAll(files);
+      _documentsController.text = _uploadedDocuments
+          .map((file) => file['fileName'])
+          .join(', ');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -414,6 +458,22 @@ class _CharacterCertificateScreenState
                   labelText: 'Supporting Documents',
                   hintText: 'Student ID Card, transcript, etc.',
                   prefixIcon: Icons.attach_file_rounded,
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _isUploading ? null : _pickDocuments,
+                  icon: _isUploading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_upload_outlined),
+                  label: Text(
+                    _isUploading
+                        ? 'Uploading ${(_uploadProgress * 100).round()}%'
+                        : 'Choose supporting files',
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(

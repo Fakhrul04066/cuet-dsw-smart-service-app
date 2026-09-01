@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile(userId) {
+      return firestore.get(/databases/(default)/documents/users/$(userId));
+    }
+
+    match /users/{userId}/profile/{fileName} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create, update: if signedIn() && request.auth.uid == userId &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType in ['image/jpeg', 'image/png'];
+      allow delete: if false;
+    }
+
+    match /applications/{applicationId}/documents/{userId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == userId ||
+        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director']
+      );
+      allow create: if signedIn() && request.auth.uid == userId &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png'];
+      allow update, delete: if false;
+    }
+
+    match /complaints/{complaintId}/attachments/{userId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == userId ||
+        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director']
+      );
+      allow create: if signedIn() && request.auth.uid == userId &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png'];
+      allow update, delete: if false;
+    }
+  }
+}

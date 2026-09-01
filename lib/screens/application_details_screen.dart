@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/application.dart';
+import '../models/application_history.dart';
+import '../services/application_service.dart';
+import '../services/application_history_service.dart';
 import '../services/character_certificate_service.dart';
 import '../services/hall_transfer_service.dart';
 import '../widgets/status_chip.dart';
@@ -20,15 +24,18 @@ class ApplicationDetailsScreen extends StatelessWidget {
             application.status,
           );
 
-    final documentNames = application.documents
-        .map(
-          (document) => (document['name'] ?? document['fileName'] ?? 'Document')
-              .toString(),
-        )
-        .toList();
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Application Details')),
+      appBar: AppBar(
+        title: const Text('Application Details'),
+        actions: [
+          if (application.status == 'CORRECTION_REQUIRED')
+            IconButton(
+              tooltip: 'Edit and resubmit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _showResubmitDialog(context),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
@@ -98,11 +105,11 @@ class ApplicationDetailsScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _InfoCard(
                 title: 'Attached Documents',
-                children: documentNames.isEmpty
+                children: application.documents.isEmpty
                     ? [const Text('No documents attached.')]
-                    : documentNames
+                    : application.documents
                           .map(
-                            (name) => Padding(
+                            (document) => Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Row(
                                 children: [
@@ -111,7 +118,23 @@ class ApplicationDetailsScreen extends StatelessWidget {
                                     size: 18,
                                   ),
                                   const SizedBox(width: 8),
-                                  Expanded(child: Text(name)),
+                                  Expanded(
+                                    child: Text(
+                                      (document['name'] ??
+                                              document['fileName'] ??
+                                              'Document')
+                                          .toString(),
+                                    ),
+                                  ),
+                                  if (document['url'] is String)
+                                    IconButton(
+                                      tooltip: 'Open document',
+                                      icon: const Icon(Icons.open_in_new),
+                                      onPressed: () => launchUrl(
+                                        Uri.parse(document['url'] as String),
+                                        mode: LaunchMode.externalApplication,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -122,12 +145,36 @@ class ApplicationDetailsScreen extends StatelessWidget {
               _InfoCard(
                 title: 'Official Notes',
                 children: [
-                  Text(
-                    application.officerComment ??
-                        application.directorComment ??
-                        'No notes available at this time.',
-                  ),
+                  if ((application.officerComment ?? '').isNotEmpty)
+                    _DetailRow(
+                      label: 'Officer',
+                      value: application.officerComment!,
+                    ),
+                  if ((application.directorComment ?? '').isNotEmpty)
+                    _DetailRow(
+                      label: 'Director',
+                      value: application.directorComment!,
+                    ),
+                  if ((application.officerComment ?? '').isEmpty &&
+                      (application.directorComment ?? '').isEmpty)
+                    const Text('No notes available at this time.'),
                 ],
+              ),
+              const SizedBox(height: 16),
+              FutureBuilder<List<ApplicationHistory>>(
+                future: ApplicationHistoryService.instance
+                    .getHistoryForApplication(application.id),
+                builder: (context, snapshot) => _InfoCard(
+                  title: 'Application History',
+                  children: (snapshot.data ?? const <ApplicationHistory>[])
+                      .map(
+                        (entry) => _DetailRow(
+                          label: entry.action,
+                          value: entry.comment,
+                        ),
+                      )
+                      .toList(),
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -185,6 +232,92 @@ class ApplicationDetailsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _showResubmitDialog(BuildContext context) async {
+    final purpose = TextEditingController(text: application.purpose);
+    final description = TextEditingController(text: application.description);
+    final currentHall = TextEditingController(
+      text: application.currentHall ?? '',
+    );
+    final requestedHall = TextEditingController(
+      text: application.requestedHall ?? '',
+    );
+    final reason = TextEditingController(text: application.reason ?? '');
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Correct and resubmit'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: purpose,
+                decoration: const InputDecoration(labelText: 'Purpose'),
+              ),
+              TextField(
+                controller: description,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              if (application.type == HallTransferService.applicationType) ...[
+                TextField(
+                  controller: currentHall,
+                  decoration: const InputDecoration(labelText: 'Current Hall'),
+                ),
+                TextField(
+                  controller: requestedHall,
+                  decoration: const InputDecoration(
+                    labelText: 'Requested Hall',
+                  ),
+                ),
+                TextField(
+                  controller: reason,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Reason'),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Resubmit'),
+          ),
+        ],
+      ),
+    );
+    if (submitted != true || !context.mounted) return;
+    try {
+      await ApplicationService.instance.resubmitApplication(
+        application,
+        purpose: purpose.text.trim(),
+        description: description.text.trim(),
+        currentHall: currentHall.text.trim(),
+        requestedHall: requestedHall.text.trim(),
+        reason: reason.text.trim(),
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Application resubmitted for officer review.'),
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
   }
 }
 

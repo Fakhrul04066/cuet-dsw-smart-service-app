@@ -4,6 +4,7 @@ class Application {
   final String id;
   final String type;
   final String studentId;
+  final String studentUid;
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -21,6 +22,7 @@ class Application {
     required this.id,
     required this.type,
     required this.studentId,
+    this.studentUid = '',
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -48,6 +50,7 @@ class Application {
       id: id ?? (data['id'] ?? '').toString(),
       type: (data['type'] ?? '').toString(),
       studentId: (data['studentId'] ?? '').toString(),
+      studentUid: (data['studentUid'] ?? '').toString(),
       status: (data['status'] ?? '').toString(),
       createdAt: _toDateTime(data['createdAt'], fallback: now),
       updatedAt: _toDateTime(data['updatedAt'], fallback: now),
@@ -71,6 +74,7 @@ class Application {
       'id': id,
       'type': type,
       'studentId': studentId,
+      'studentUid': studentUid,
       'status': status,
       'createdAt': useServerTimestamps
           ? FieldValue.serverTimestamp()
@@ -94,6 +98,7 @@ class Application {
     String? id,
     String? type,
     String? studentId,
+    String? studentUid,
     String? status,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -111,6 +116,7 @@ class Application {
       id: id ?? this.id,
       type: type ?? this.type,
       studentId: studentId ?? this.studentId,
+      studentUid: studentUid ?? this.studentUid,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

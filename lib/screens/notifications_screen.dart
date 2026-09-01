@@ -1,88 +1,113 @@
 import 'package:flutter/material.dart';
 
-import '../data/mock_data.dart';
+import '../models/app_notification.dart';
+import '../services/application_service.dart';
+import '../services/complaint_service_data.dart';
+import '../services/notification_service_data.dart';
+import 'application_details_screen.dart';
+import 'complaint_screen.dart';
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Notifications'),
+      actions: [
+        StreamBuilder<int>(
+          stream: NotificationServiceData.instance.streamUnreadCount(),
+          builder: (context, snapshot) => Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(child: Text('Unread: ${snapshot.data ?? 0}')),
+          ),
+        ),
+      ],
+    ),
+    body: StreamBuilder<List<AppNotification>>(
+      stream: NotificationServiceData.instance
+          .streamNotificationsForCurrentUser(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Could not load notifications: ${snapshot.error}'),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.data!.isEmpty) {
+          return const Center(child: Text('No notifications yet.'));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          itemCount: snapshot.data!.length,
+          itemBuilder: (context, index) =>
+              _NotificationTile(notification: snapshot.data![index]),
+        );
+      },
+    ),
+  );
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  final notifications = MockData.notifications;
+class _NotificationTile extends StatelessWidget {
+  final AppNotification notification;
+  const _NotificationTile({required this.notification});
+
+  Future<void> _open(BuildContext context) async {
+    if (!notification.read) {
+      await NotificationServiceData.instance.markAsRead(notification.id);
+    }
+    if (!context.mounted || notification.relatedId.isEmpty) return;
+    if (notification.type.startsWith('complaint')) {
+      final complaint = await ComplaintServiceData.instance.getComplaintById(
+        notification.relatedId,
+      );
+      if (context.mounted && complaint != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ComplaintDetailsScreen(complaint: complaint),
+          ),
+        );
+      }
+      return;
+    }
+    final application = await ApplicationService.instance.getApplicationById(
+      notification.relatedId,
+    );
+    if (context.mounted && application != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ApplicationDetailsScreen(application: application),
+        ),
+      );
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: SafeArea(
-        child: ListView.builder(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          itemCount: notifications.length,
-          itemBuilder: (context, index) {
-            final notification = notifications[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: notification.isRead
-                    ? Colors.white
-                    : const Color(0xFFEAF1FF),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFE0E7F1)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    margin: const EdgeInsets.only(top: 6),
-                    decoration: BoxDecoration(
-                      color: notification.isRead
-                          ? const Color(0xFFB7C5D8)
-                          : Theme.of(context).colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          notification.title,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(notification.message),
-                        const SizedBox(height: 8),
-                        Text(
-                          notification.time,
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (!notification.isRead)
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          notifications[index] = notifications[index].copyWith(
-                            isRead: true,
-                          );
-                        });
-                      },
-                      child: const Text('Mark read'),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
+  Widget build(BuildContext context) => Card(
+    color: notification.read ? null : const Color(0xFFEAF1FF),
+    child: ListTile(
+      leading: Icon(
+        notification.read
+            ? Icons.notifications_none
+            : Icons.notifications_active,
       ),
-    );
-  }
+      title: Text(notification.title),
+      subtitle: Text(
+        '${notification.message}\n${notification.createdAt.toLocal()}',
+      ),
+      isThreeLine: true,
+      trailing: notification.read
+          ? null
+          : TextButton(
+              onPressed: () =>
+                  NotificationServiceData.instance.markAsRead(notification.id),
+              child: const Text('Mark read'),
+            ),
+      onTap: () => _open(context),
+    ),
+  );
 }

@@ -13,10 +13,15 @@ class Complaint {
   final String id;
   final String trackingNumber;
   final String studentId;
+  final String studentUid;
   final String title;
   final String description;
   final String category;
   final String priority;
+  final String? aiSuggestedCategory;
+  final String? aiSuggestedPriority;
+  final String? aiSummary;
+  final String? aiSuggestedDepartment;
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -28,10 +33,15 @@ class Complaint {
     required this.id,
     this.trackingNumber = '',
     required this.studentId,
+    this.studentUid = '',
     required this.title,
     required this.description,
     required this.category,
     required this.priority,
+    this.aiSuggestedCategory,
+    this.aiSuggestedPriority,
+    this.aiSummary,
+    this.aiSuggestedDepartment,
     required this.status,
     required this.createdAt,
     required this.updatedAt,
@@ -50,10 +60,15 @@ class Complaint {
       id: id ?? (data['id'] ?? '').toString(),
       trackingNumber: (data['trackingNumber'] ?? '').toString(),
       studentId: (data['studentId'] ?? '').toString(),
+      studentUid: (data['studentUid'] ?? '').toString(),
       title: (data['title'] ?? '').toString(),
       description: (data['description'] ?? '').toString(),
       category: (data['category'] ?? '').toString(),
       priority: (data['priority'] ?? 'NORMAL').toString(),
+      aiSuggestedCategory: _stringOrNull(data['aiSuggestedCategory']),
+      aiSuggestedPriority: _stringOrNull(data['aiSuggestedPriority']),
+      aiSummary: _stringOrNull(data['aiSummary']),
+      aiSuggestedDepartment: _stringOrNull(data['aiSuggestedDepartment']),
       status: (data['status'] ?? 'SUBMITTED').toString(),
       createdAt: _toDateTime(data['createdAt'], fallback: now),
       updatedAt: _toDateTime(data['updatedAt'], fallback: now),
@@ -67,10 +82,15 @@ class Complaint {
     'id': id,
     'trackingNumber': trackingNumber,
     'studentId': studentId,
+    'studentUid': studentUid,
     'title': title,
     'description': description,
     'category': category,
     'priority': priority,
+    'aiSuggestedCategory': aiSuggestedCategory,
+    'aiSuggestedPriority': aiSuggestedPriority,
+    'aiSummary': aiSummary,
+    'aiSuggestedDepartment': aiSuggestedDepartment,
     'status': status,
     'createdAt': useServerTimestamps
         ? FieldValue.serverTimestamp()
@@ -87,10 +107,15 @@ class Complaint {
     String? id,
     String? trackingNumber,
     String? studentId,
+    String? studentUid,
     String? title,
     String? description,
     String? category,
     String? priority,
+    String? aiSuggestedCategory,
+    String? aiSuggestedPriority,
+    String? aiSummary,
+    String? aiSuggestedDepartment,
     String? status,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -101,10 +126,15 @@ class Complaint {
     id: id ?? this.id,
     trackingNumber: trackingNumber ?? this.trackingNumber,
     studentId: studentId ?? this.studentId,
+    studentUid: studentUid ?? this.studentUid,
     title: title ?? this.title,
     description: description ?? this.description,
     category: category ?? this.category,
     priority: priority ?? this.priority,
+    aiSuggestedCategory: aiSuggestedCategory ?? this.aiSuggestedCategory,
+    aiSuggestedPriority: aiSuggestedPriority ?? this.aiSuggestedPriority,
+    aiSummary: aiSummary ?? this.aiSummary,
+    aiSuggestedDepartment: aiSuggestedDepartment ?? this.aiSuggestedDepartment,
     status: status ?? this.status,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,

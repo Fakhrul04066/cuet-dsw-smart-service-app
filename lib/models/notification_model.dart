@@ -5,6 +5,8 @@ class NotificationModel {
   final String userUid;
   final String title;
   final String message;
+  final String type;
+  final String referenceId;
   final String time;
   final bool isRead;
   final Timestamp? createdAt;
@@ -14,6 +16,8 @@ class NotificationModel {
     this.userUid = '',
     required this.title,
     required this.message,
+    this.type = '',
+    this.referenceId = '',
     required this.time,
     this.isRead = false,
     this.createdAt,
@@ -27,6 +31,8 @@ class NotificationModel {
       userUid: data['userUid']?.toString() ?? '',
       title: data['title']?.toString() ?? '',
       message: data['message']?.toString() ?? '',
+      type: data['type']?.toString() ?? '',
+      referenceId: data['referenceId']?.toString() ?? '',
       time: _formatTime(createdAt),
       isRead: data['isRead'] == true,
       createdAt: createdAt is Timestamp ? createdAt : null,
@@ -38,6 +44,8 @@ class NotificationModel {
     String? userUid,
     String? title,
     String? message,
+    String? type,
+    String? referenceId,
     String? time,
     bool? isRead,
     Timestamp? createdAt,
@@ -47,6 +55,8 @@ class NotificationModel {
       userUid: userUid ?? this.userUid,
       title: title ?? this.title,
       message: message ?? this.message,
+      type: type ?? this.type,
+      referenceId: referenceId ?? this.referenceId,
       time: time ?? this.time,
       isRead: isRead ?? this.isRead,
       createdAt: createdAt ?? this.createdAt,

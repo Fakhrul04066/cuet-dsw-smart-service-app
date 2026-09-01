@@ -8,6 +8,7 @@ import 'application_history_service.dart';
 import 'application_service.dart';
 import 'audit_log_service.dart';
 import 'user_service.dart';
+import 'notification_service.dart';
 
 class HallTransferStatus {
   static const String submitted = 'SUBMITTED';
@@ -92,6 +93,7 @@ class HallTransferService {
     required String currentHall,
     required String requestedHall,
     required String reason,
+    String? applicationId,
     List<Map<String, dynamic>> documents = const [],
   }) async {
     final actor = FirebaseAuth.instance.currentUser;
@@ -106,7 +108,8 @@ class HallTransferService {
     }
 
     final application = Application(
-      id: '',
+      id: applicationId ?? '',
+      studentUid: actor.uid,
       type: applicationType,
       studentId: profile.studentId,
       status: HallTransferStatus.submitted,
@@ -125,6 +128,13 @@ class HallTransferService {
       action: HallTransferStatus.submitted,
       performedBy: actor.uid,
       comment: 'Student submitted the hall transfer request.',
+    );
+    await NotificationService.instance.createNotification(
+      userUid: actor.uid,
+      title: 'Application submitted',
+      message: 'Your hall transfer application was submitted.',
+      type: 'application_submitted',
+      referenceId: id,
     );
     return saved;
   }
@@ -178,6 +188,10 @@ class HallTransferService {
     required String decision,
     String? comment,
   }) async {
+    if ((decision == 'request_correction' || decision == 'reject') &&
+        (comment == null || comment.trim().isEmpty)) {
+      throw StateError('A reason is required for this officer decision.');
+    }
     final actor = await _staff('dsw_officer');
     final application = await _get(applicationId);
     final nextStatus = switch (decision) {
@@ -218,6 +232,9 @@ class HallTransferService {
     required String decision,
     String? comment,
   }) async {
+    if (decision == 'reject' && (comment == null || comment.trim().isEmpty)) {
+      throw StateError('A reason is required for this director decision.');
+    }
     final actor = await _staff('dsw_director');
     final application = await _get(applicationId);
     final nextStatus = switch (decision) {
@@ -282,6 +299,15 @@ class HallTransferService {
       performedBy: actorId,
       comment: comment,
     );
+    if (application.studentUid.isNotEmpty) {
+      await NotificationService.instance.createNotification(
+        userUid: application.studentUid,
+        title: 'Application status updated',
+        message: 'Your hall transfer application is now $status.',
+        type: 'application_status',
+        referenceId: application.id,
+      );
+    }
     if (actor != null && actorRole != null) {
       await AuditLogService.instance.addAuditLog(
         AuditLog(
