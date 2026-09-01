@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import 'character_certificate_screen.dart';
+import 'hall_transfer_screen.dart';
 import 'login_screen.dart';
 import 'my_applications_screen.dart';
 
@@ -60,6 +61,21 @@ class StudentDashboardScreen extends StatelessWidget {
                     },
                     icon: const Icon(Icons.description_outlined),
                     label: const Text('Character Certificate'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const HallTransferScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.home_work_outlined),
+                    label: const Text('Hall Transfer'),
                   ),
                 ),
                 const SizedBox(height: 12),

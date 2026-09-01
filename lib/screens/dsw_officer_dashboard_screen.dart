@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/application.dart';
 import '../services/auth_service.dart';
 import '../services/character_certificate_service.dart';
+import '../services/hall_transfer_service.dart';
 import '../widgets/status_chip.dart';
 import 'application_details_screen.dart';
 import 'login_screen.dart';
@@ -21,12 +22,22 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _queueFuture = CharacterCertificateService.instance.getOfficerQueue();
+    _queueFuture = _loadQueue();
+  }
+
+  Future<List<Application>> _loadQueue() async {
+    final queues = await Future.wait([
+      CharacterCertificateService.instance.getOfficerQueue(),
+      HallTransferService.instance.getOfficerQueue(),
+    ]);
+    final applications = [...queues[0], ...queues[1]];
+    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return applications;
   }
 
   void _refreshQueue() {
     setState(() {
-      _queueFuture = CharacterCertificateService.instance.getOfficerQueue();
+      _queueFuture = _loadQueue();
     });
   }
 
@@ -65,7 +76,17 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen> {
     }
 
     try {
-      if (decision == 'review') {
+      if (application.type == HallTransferService.applicationType) {
+        if (decision == 'review') {
+          await HallTransferService.instance.reviewForOfficer(application.id);
+        } else {
+          await HallTransferService.instance.officerDecision(
+            applicationId: application.id,
+            decision: decision,
+            comment: comment.isEmpty ? null : comment,
+          );
+        }
+      } else if (decision == 'review') {
         await CharacterCertificateService.instance.reviewApplicationForOfficer(
           application.id,
         );

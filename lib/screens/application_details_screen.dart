@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/application.dart';
 import '../services/character_certificate_service.dart';
+import '../services/hall_transfer_service.dart';
 import '../widgets/status_chip.dart';
 
 class ApplicationDetailsScreen extends StatelessWidget {
@@ -11,8 +12,13 @@ class ApplicationDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeline = CharacterCertificateService.instance
-        .statusTimelineForApplication(application.status);
+    final isHallTransfer =
+        application.type == HallTransferService.applicationType;
+    final timeline = isHallTransfer
+        ? HallTransferStatus.timeline(application.status)
+        : CharacterCertificateService.instance.statusTimelineForApplication(
+            application.status,
+          );
 
     final documentNames = application.documents
         .map(
@@ -55,9 +61,11 @@ class ApplicationDetailsScreen extends StatelessWidget {
                   ),
                   _DetailRow(
                     label: 'Current Status',
-                    value: CharacterCertificateStatus.timelineLabel(
-                      application.status,
-                    ),
+                    value: isHallTransfer
+                        ? HallTransferStatus.timelineLabel(application.status)
+                        : CharacterCertificateStatus.timelineLabel(
+                            application.status,
+                          ),
                   ),
                 ],
               ),
@@ -66,6 +74,20 @@ class ApplicationDetailsScreen extends StatelessWidget {
                 title: 'Submitted Information',
                 children: [
                   _DetailRow(label: 'Student ID', value: application.studentId),
+                  if (isHallTransfer) ...[
+                    _DetailRow(
+                      label: 'Current Hall',
+                      value: application.currentHall ?? '',
+                    ),
+                    _DetailRow(
+                      label: 'Requested Hall',
+                      value: application.requestedHall ?? '',
+                    ),
+                    _DetailRow(
+                      label: 'Reason',
+                      value: application.reason ?? '',
+                    ),
+                  ],
                   _DetailRow(label: 'Purpose', value: application.purpose),
                   _DetailRow(
                     label: 'Description',
@@ -148,7 +170,9 @@ class ApplicationDetailsScreen extends StatelessWidget {
                           top: 0,
                         ),
                         child: Text(
-                          CharacterCertificateStatus.timelineLabel(step),
+                          isHallTransfer
+                              ? HallTransferStatus.timelineLabel(step)
+                              : CharacterCertificateStatus.timelineLabel(step),
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                       ),

@@ -96,10 +96,20 @@ service cloud.firestore {
         isStudent() &&
         request.resource.data.studentId == currentStudentId() &&
         request.resource.data.status == 'SUBMITTED' &&
-        request.resource.data.type == 'character_certificate' &&
-        request.resource.data.purpose is string &&
-        request.resource.data.description is string &&
-        request.resource.data.documents is list;
+        request.resource.data.documents is list &&
+        (
+          (
+            request.resource.data.type == 'character_certificate' &&
+            request.resource.data.purpose is string &&
+            request.resource.data.description is string
+          ) ||
+          (
+            request.resource.data.type == 'hall_transfer' &&
+            request.resource.data.currentHall is string &&
+            request.resource.data.requestedHall is string &&
+            request.resource.data.reason is string
+          )
+        );
 
       allow read: if signedIn() && (
         (isStudent() && resource.data.studentId == currentStudentId()) ||

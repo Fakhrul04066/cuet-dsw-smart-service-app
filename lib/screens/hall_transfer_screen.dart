@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/ai_assistant_service.dart';
+import '../services/auth_service.dart';
+import '../services/hall_transfer_service.dart';
 import '../widgets/custom_text_field.dart';
 
 class HallTransferScreen extends StatefulWidget {
@@ -19,6 +21,7 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
   final _reasonController = TextEditingController();
   bool _declarationAccepted = false;
   bool _checkingForm = false;
+  bool _isSubmitting = false;
   Map<String, dynamic>? _aiCheckResult;
 
   @override
@@ -29,6 +32,22 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
     _preferredHallController.dispose();
     _reasonController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStudentProfile();
+  }
+
+  Future<void> _loadStudentProfile() async {
+    final profile = await AuthService.instance.getCurrentUserProfile();
+    if (!mounted || profile == null) return;
+    setState(() {
+      _studentNameController.text = profile.name;
+      _studentIdController.text = profile.studentId;
+      _currentHallController.text = profile.hall;
+    });
   }
 
   Future<void> _runAiCheck() async {
@@ -114,7 +133,7 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
     }
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -128,21 +147,45 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
       return;
     }
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hall Transfer Submitted'),
-        content: const Text(
-          'Your Hall Transfer request has been submitted successfully.\n\nTracking Number: HT-2026-0015',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
+    setState(() => _isSubmitting = true);
+    try {
+      final application = await HallTransferService.instance.submitHallTransfer(
+        currentHall: _currentHallController.text.trim(),
+        requestedHall: _preferredHallController.text.trim(),
+        reason: _reasonController.text.trim(),
+        documents: const [
+          {'name': 'hall_transfer_support.pdf', 'type': 'supporting_document'},
         ],
-      ),
-    );
+      );
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Hall Transfer Submitted'),
+          content: Text(
+            'Your Hall Transfer request has been submitted successfully.\n\nApplication ID: ${application.id}\nStatus: ${HallTransferStatus.timelineLabel(application.status)}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -292,14 +335,16 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _submitForm,
+                    onPressed: _isSubmitting ? null : _submitForm,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(52),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text('Submit Application'),
+                    child: Text(
+                      _isSubmitting ? 'Submitting...' : 'Submit Application',
+                    ),
                   ),
                 ),
               ],
