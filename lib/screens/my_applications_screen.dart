@@ -23,6 +23,18 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
     );
   }
 
+  Future<void> _openDetails(Application application) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ApplicationDetailsScreen(application: application),
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('My Applications')),
@@ -78,14 +90,7 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Card(
                     child: InkWell(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ApplicationDetailsScreen(
-                            application: application,
-                          ),
-                        ),
-                      ),
+                      onTap: () => _openDetails(application),
                       borderRadius: BorderRadius.circular(18),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -128,13 +133,11 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                               Text('Correction: ${application.officerComment}'),
                             ],
                             if (application.status == 'REJECTED' &&
-                                (application.officerComment ??
-                                        application.directorComment ??
-                                        '')
-                                    .isNotEmpty) ...[
+                                ((application.directorComment ?? '').isNotEmpty ||
+                                    (application.officerComment ?? '').isNotEmpty)) ...[
                               const SizedBox(height: 8),
                               Text(
-                                'Reason: ${application.officerComment ?? application.directorComment}',
+                                'Reason: ${(application.directorComment ?? '').isNotEmpty ? application.directorComment : application.officerComment}',
                               ),
                             ],
                           ],

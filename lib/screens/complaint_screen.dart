@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/complaint.dart';
+import '../models/user_model.dart';
 import '../services/complaint_service_data.dart';
 import '../services/firebase_storage_service.dart';
 import '../services/user_service.dart';
@@ -19,7 +20,7 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
   final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _description = TextEditingController();
-  late final Future<dynamic> _profile;
+  late final Future<StudentUser?> _profile;
   String _category = 'Hall Facilities';
   bool _confidential = false;
   bool _saving = false;
@@ -50,7 +51,7 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
     super.dispose();
   }
 
-  Future<void> _submit(dynamic profile) async {
+  Future<void> _submit(StudentUser? profile) async {
     if (!_formKey.currentState!.validate()) return;
     if (profile == null || profile.studentId.isEmpty) {
       _message('Complete your student profile before submitting a complaint.');
@@ -140,13 +141,19 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Student Complaint')),
-    body: FutureBuilder<dynamic>(
+    body: FutureBuilder<StudentUser?>(
       future: _profile,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        if (snapshot.hasError) {
+          return Center(child: Text('Could not load your profile: ${snapshot.error}'));
+        }
         final profile = snapshot.data;
+        if (profile == null) {
+          return const Center(child: Text('Student profile not found.'));
+        }
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Form(
@@ -238,13 +245,21 @@ class ComplaintHistoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('My Complaints')),
-    body: FutureBuilder<dynamic>(
+    body: FutureBuilder<StudentUser?>(
       future: UserService.instance.getCurrentUserProfile(),
       builder: (context, profileSnapshot) {
-        if (!profileSnapshot.hasData) {
+        if (profileSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        if (profileSnapshot.hasError) {
+          return Center(
+            child: Text('Could not load your profile: ${profileSnapshot.error}'),
+          );
+        }
         final profile = profileSnapshot.data;
+        if (profile == null || profile.studentId.trim().isEmpty) {
+          return const Center(child: Text('Student profile not found.'));
+        }
         return StreamBuilder<List<Complaint>>(
           stream: ComplaintServiceData.instance.streamComplaintsForStudent(
             profile.studentId,

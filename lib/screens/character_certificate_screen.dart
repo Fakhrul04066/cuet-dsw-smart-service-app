@@ -426,12 +426,17 @@ class _CharacterCertificateScreenState
                 const SizedBox(height: 16),
                 CustomTextField(
                   controller: _phoneController,
-                  labelText: 'Phone Number',
+                  labelText: 'Phone Number (optional)',
                   prefixIcon: Icons.phone_outlined,
                   keyboardType: TextInputType.phone,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please enter your phone number'
-                      : null,
+                  validator: (value) {
+                    final phone = (value ?? '').trim().replaceAll(RegExp(r'[\s-]'), '');
+                    if (phone.isEmpty) return null;
+                    if (!RegExp(r'^\+?[0-9]{7,15}$').hasMatch(phone)) {
+                      return 'Please enter a valid phone number';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 CustomTextField(

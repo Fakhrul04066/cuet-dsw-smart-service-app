@@ -38,13 +38,13 @@ class CharacterCertificateStatus {
       case submitted:
         return 'Submitted';
       case officerReview:
-        return 'Officer Review';
+        return 'Officer Processing';
       case correctionRequired:
         return 'Correction Required';
       case officerApproved:
         return 'Officer Approved';
       case directorReview:
-        return 'Director Review';
+        return 'Director Processing';
       case approved:
         return 'Approved';
       case certificateIssued:
@@ -101,8 +101,6 @@ class CharacterCertificateService {
   static const Map<String, Set<String>> validTransitions = {
     CharacterCertificateStatus.submitted: {
       CharacterCertificateStatus.officerReview,
-      CharacterCertificateStatus.correctionRequired,
-      CharacterCertificateStatus.rejected,
     },
     CharacterCertificateStatus.officerReview: {
       CharacterCertificateStatus.correctionRequired,
@@ -111,11 +109,9 @@ class CharacterCertificateService {
     },
     CharacterCertificateStatus.correctionRequired: {
       CharacterCertificateStatus.officerReview,
-      CharacterCertificateStatus.rejected,
     },
     CharacterCertificateStatus.officerApproved: {
       CharacterCertificateStatus.directorReview,
-      CharacterCertificateStatus.rejected,
     },
     CharacterCertificateStatus.directorReview: {
       CharacterCertificateStatus.approved,
@@ -228,6 +224,7 @@ class CharacterCertificateService {
     final statuses = [
       CharacterCertificateStatus.officerApproved,
       CharacterCertificateStatus.directorReview,
+      CharacterCertificateStatus.approved,
     ];
 
     final applications = <Application>[];
@@ -257,9 +254,9 @@ class CharacterCertificateService {
     required String decision,
     String? comment,
   }) async {
-    if ((decision == 'request_correction' || decision == 'reject') &&
+    if ((decision == 'request_correction' || decision == 'reject' || decision == 'approve') &&
         (comment == null || comment.trim().isEmpty)) {
-      throw StateError('A reason is required for this officer decision.');
+      throw StateError('An official note is required for this officer decision.');
     }
     final actor = FirebaseAuth.instance.currentUser;
     if (actor == null) {
@@ -274,7 +271,7 @@ class CharacterCertificateService {
 
     if (StudentUser.normalizeRole(actorProfile.role) != 'dsw_officer') {
       throw StateError(
-        'Only DSW officers can review character certificate applications.',
+        'Only DSW officers can process character certificate applications.',
       );
     }
 
@@ -286,33 +283,28 @@ class CharacterCertificateService {
     };
 
     _ensureValidTransition(application.status, nextStatus, 'DSW Officer');
+    final effectiveComment = (comment ?? '').trim().isEmpty
+        ? _officerDecisionMessage(decision)
+        : comment!.trim();
 
     final updatedApplication = application.copyWith(
       status: nextStatus,
-      officerComment: comment ?? application.officerComment,
+      officerComment: effectiveComment,
       updatedAt: DateTime.now(),
     );
 
-    await _applicationService.updateApplication(
+    await _applicationService.updateWorkflowStatus(
       applicationId,
-      updatedApplication,
+      status: nextStatus,
+      officerComment: effectiveComment,
     );
 
     await _recordHistory(
       applicationId: applicationId,
       action: nextStatus,
       performedBy: actor.uid,
-      comment: comment ?? _officerDecisionMessage(decision),
+      comment: effectiveComment,
     );
-    if (application.studentUid.isNotEmpty) {
-      await NotificationService.instance.createNotification(
-        userUid: application.studentUid,
-        title: 'Application status updated',
-        message: 'Your character certificate application is now $nextStatus.',
-        type: 'application_status',
-        referenceId: applicationId,
-      );
-    }
 
     await _recordAudit(
       actorId: actor.uid,
@@ -325,8 +317,14 @@ class CharacterCertificateService {
         'decision': decision,
         'fromStatus': application.status,
         'toStatus': nextStatus,
-        'comment': comment ?? _officerDecisionMessage(decision),
+        'comment': effectiveComment,
       },
+    );
+
+    await _notifyStudentBestEffort(
+      application: application,
+      title: 'Application status updated',
+      message: 'Your character certificate application is now $nextStatus.',
     );
 
     return updatedApplication;
@@ -341,8 +339,9 @@ class CharacterCertificateService {
       'DIRECTOR_DECISION_START: applicationId=$applicationId, decision=$decision',
     );
 
-    if (decision == 'reject' && (comment == null || comment.trim().isEmpty)) {
-      throw StateError('A reason is required for this director decision.');
+    if ((decision == 'approve' || decision == 'reject') &&
+        (comment == null || comment.trim().isEmpty)) {
+      throw StateError('An official note is required for this director decision.');
     }
     final actor = FirebaseAuth.instance.currentUser;
     if (actor == null) {
@@ -367,10 +366,13 @@ class CharacterCertificateService {
     };
 
     _ensureValidTransition(application.status, nextStatus, 'DSW Director');
+    final effectiveComment = (comment ?? '').trim().isEmpty
+        ? _directorDecisionMessage(decision)
+        : comment!.trim();
 
     final updatedApplication = application.copyWith(
       status: nextStatus,
-      directorComment: comment ?? application.directorComment,
+      directorComment: effectiveComment,
       updatedAt: DateTime.now(),
     );
 
@@ -378,9 +380,10 @@ class CharacterCertificateService {
       developer.log(
         'DIRECTOR_APPLICATION_UPDATE_START: applicationId=$applicationId',
       );
-      await _applicationService.updateApplication(
+      await _applicationService.updateWorkflowStatus(
         applicationId,
-        updatedApplication,
+        status: nextStatus,
+        directorComment: effectiveComment,
       );
       developer.log(
         'DIRECTOR_APPLICATION_UPDATE_OK: applicationId=$applicationId',
@@ -398,32 +401,11 @@ class CharacterCertificateService {
         applicationId: applicationId,
         action: nextStatus,
         performedBy: actor.uid,
-        comment: comment ?? _directorDecisionMessage(decision),
+        comment: effectiveComment,
       );
       developer.log('DIRECTOR_HISTORY_WRITE_OK: applicationId=$applicationId');
     } catch (e) {
       developer.log('DIRECTOR_HISTORY_WRITE_FAILED: ${e.runtimeType} $e');
-      rethrow;
-    }
-
-    try {
-      if (application.studentUid.isNotEmpty) {
-        developer.log(
-          'DIRECTOR_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
-        );
-        await NotificationService.instance.createNotification(
-          userUid: application.studentUid,
-          title: 'Application status updated',
-          message: 'Your character certificate application is now $nextStatus.',
-          type: 'application_status',
-          referenceId: applicationId,
-        );
-        developer.log(
-          'DIRECTOR_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
-        );
-      }
-    } catch (e) {
-      developer.log('DIRECTOR_NOTIFICATION_WRITE_FAILED: ${e.runtimeType} $e');
       rethrow;
     }
 
@@ -440,7 +422,7 @@ class CharacterCertificateService {
           'decision': decision,
           'fromStatus': application.status,
           'toStatus': nextStatus,
-          'comment': comment ?? _directorDecisionMessage(decision),
+          'comment': effectiveComment,
         },
       );
       developer.log('DIRECTOR_AUDIT_WRITE_OK: applicationId=$applicationId');
@@ -448,6 +430,13 @@ class CharacterCertificateService {
       developer.log('DIRECTOR_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
       rethrow;
     }
+
+    await _notifyStudentBestEffort(
+      application: application,
+      title: 'Application status updated',
+      message: 'Your character certificate application is now $nextStatus.',
+      logPrefix: 'DIRECTOR_NOTIFICATION',
+    );
 
     developer.log('DIRECTOR_DECISION_OK: applicationId=$applicationId');
     return updatedApplication;
@@ -459,7 +448,7 @@ class CharacterCertificateService {
     final profile = await UserService.instance.getUserById(actor.uid);
     if (profile == null ||
         StudentUser.normalizeRole(profile.role) != 'dsw_officer') {
-      throw StateError('Only DSW officers can start application review.');
+      throw StateError('Only DSW officers can start application processing.');
     }
     final application = await getApplicationById(applicationId);
     if (application.status == CharacterCertificateStatus.submitted) {
@@ -467,12 +456,15 @@ class CharacterCertificateService {
         status: CharacterCertificateStatus.officerReview,
         updatedAt: DateTime.now(),
       );
-      await _applicationService.updateApplication(applicationId, updated);
+      await _applicationService.updateWorkflowStatus(
+        applicationId,
+        status: CharacterCertificateStatus.officerReview,
+      );
       await _recordHistory(
         applicationId: applicationId,
         action: CharacterCertificateStatus.officerReview,
         performedBy: actor.uid,
-        comment: 'Application moved to officer review.',
+        comment: 'Officer started processing the application.',
       );
       await _recordAudit(
         actorId: actor.uid,
@@ -498,7 +490,7 @@ class CharacterCertificateService {
     final profile = await UserService.instance.getUserById(actor.uid);
     if (profile == null ||
         StudentUser.normalizeRole(profile.role) != 'dsw_director') {
-      throw StateError('Only DSW directors can start application review.');
+      throw StateError('Only DSW directors can start application processing.');
     }
     final application = await getApplicationById(applicationId);
     if (application.status == CharacterCertificateStatus.officerApproved) {
@@ -511,7 +503,10 @@ class CharacterCertificateService {
         developer.log(
           'DIRECTOR_REVIEW_APPLICATION_UPDATE_START: applicationId=$applicationId',
         );
-        await _applicationService.updateApplication(applicationId, updated);
+        await _applicationService.updateWorkflowStatus(
+          applicationId,
+          status: CharacterCertificateStatus.directorReview,
+        );
         developer.log(
           'DIRECTOR_REVIEW_APPLICATION_UPDATE_OK: applicationId=$applicationId',
         );
@@ -530,7 +525,7 @@ class CharacterCertificateService {
           applicationId: applicationId,
           action: CharacterCertificateStatus.directorReview,
           performedBy: actor.uid,
-          comment: 'Application moved to director review.',
+          comment: 'Director started processing the application.',
         );
         developer.log(
           'DIRECTOR_REVIEW_HISTORY_WRITE_OK: applicationId=$applicationId',
@@ -586,6 +581,33 @@ class CharacterCertificateService {
       throw StateError(
         '$roleName cannot move from $fromStatus to $toStatus for character certificate applications.',
       );
+    }
+  }
+
+  Future<void> _notifyStudentBestEffort({
+    required Application application,
+    required String title,
+    required String message,
+    String logPrefix = 'APPLICATION_NOTIFICATION',
+  }) async {
+    if (application.studentUid.isEmpty) {
+      developer.log('${logPrefix}_SKIPPED: legacy application has no studentUid');
+      return;
+    }
+    try {
+      developer.log('${logPrefix}_WRITE_START: studentUid=${application.studentUid}');
+      await NotificationService.instance.createNotification(
+        userUid: application.studentUid,
+        title: title,
+        message: message,
+        type: 'application_status',
+        referenceId: application.id,
+      );
+      developer.log('${logPrefix}_WRITE_OK: studentUid=${application.studentUid}');
+    } catch (error) {
+      // Notifications are secondary. A notification problem must not make an
+      // already-recorded application decision look like it failed.
+      developer.log('${logPrefix}_WRITE_FAILED: ${error.runtimeType} $error');
     }
   }
 

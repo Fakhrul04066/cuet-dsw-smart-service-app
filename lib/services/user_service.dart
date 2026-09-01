@@ -110,4 +110,45 @@ class UserService {
 
     await _users.doc(uid).set(profile.toMap(), SetOptions(merge: true));
   }
+  Future<void> updateOwnPhone({
+    required String uid,
+    required String phone,
+  }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid == null || currentUid != uid) {
+      throw StateError('You can update only your own profile.');
+    }
+
+    await _users.doc(uid).update({
+      'phone': phone.trim(),
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Future<void> updateStudentHallAfterApprovedTransfer({
+    required String studentUid,
+    required String studentId,
+    required String hall,
+  }) async {
+    final normalizedHall = hall.trim();
+    if (normalizedHall.isEmpty) {
+      throw StateError('Approved hall transfer is missing the requested hall.');
+    }
+
+    var targetUid = studentUid.trim();
+    if (targetUid.isEmpty) {
+      final profile = await getUserByStudentId(studentId);
+      targetUid = profile?.uid ?? '';
+    }
+
+    if (targetUid.isEmpty) {
+      throw StateError('Could not find the student profile for hall update.');
+    }
+
+    await _users.doc(targetUid).update({
+      'hall': normalizedHall,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
 }

@@ -49,11 +49,31 @@ class ApplicationService {
     return docRef.id;
   }
 
-  Future<void> updateApplication(String id, Application application) async {
-    final payload = application
-        .copyWith(updatedAt: DateTime.now())
-        .toFirestore(useServerTimestamps: true);
-    await _applications.doc(id).update(payload);
+  Future<void> updateWorkflowStatus(
+    String id, {
+    required String status,
+    String? currentReviewer,
+    String? officerComment,
+    String? directorComment,
+  }) async {
+    // Workflow updates are intentionally narrow. In particular, do not write
+    // studentUid/type/studentId/createdAt back to legacy demo documents while a
+    // staff member is only changing status. This keeps the client payload in
+    // exact sync with the Firestore rules' allowed changed fields.
+    final fields = <String, dynamic>{
+      'status': status,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (currentReviewer != null) {
+      fields['currentReviewer'] = currentReviewer;
+    }
+    if (officerComment != null) {
+      fields['officerComment'] = officerComment;
+    }
+    if (directorComment != null) {
+      fields['directorComment'] = directorComment;
+    }
+    await _applications.doc(id).update(fields);
   }
 
   Future<void> deleteApplication(String id) async {
@@ -79,17 +99,31 @@ class ApplicationService {
         'Only applications requiring correction can be resubmitted.',
       );
     }
+    if (application.type == 'character_certificate' &&
+        (purpose.trim().isEmpty || description.trim().isEmpty)) {
+      throw StateError('Purpose and description are required.');
+    }
+    if (application.type == 'hall_transfer' &&
+        ((currentHall ?? '').trim().isEmpty ||
+            (requestedHall ?? '').trim().isEmpty ||
+            (reason ?? '').trim().isEmpty)) {
+      throw StateError(
+        'Current hall, requested hall, and reason are required.',
+      );
+    }
     final fields = <String, dynamic>{
-      'purpose': purpose,
-      'description': description,
       'status': 'OFFICER_REVIEW',
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    if (application.type == 'hall_transfer') {
-      fields['currentHall'] = currentHall ?? application.currentHall ?? '';
+    if (application.type == 'character_certificate') {
+      fields['purpose'] = purpose.trim();
+      fields['description'] = description.trim();
+    } else if (application.type == 'hall_transfer') {
+      fields['currentHall'] =
+          (currentHall ?? application.currentHall ?? '').trim();
       fields['requestedHall'] =
-          requestedHall ?? application.requestedHall ?? '';
-      fields['reason'] = reason ?? application.reason ?? '';
+          (requestedHall ?? application.requestedHall ?? '').trim();
+      fields['reason'] = (reason ?? application.reason ?? '').trim();
     }
     await _applications.doc(application.id).update(fields);
     await ApplicationHistoryService.instance.addHistoryEntry(
@@ -105,13 +139,15 @@ class ApplicationService {
   }
 
   Stream<List<Application>> streamApplicationsForStudent(String studentId) {
-    return _applications
-        .where('studentId', isEqualTo: studentId)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs.map(Application.fromFirestore).toList(),
-        );
+    return _applications.where('studentId', isEqualTo: studentId).snapshots().map(
+      (snapshot) {
+        final applications = snapshot.docs
+            .map(Application.fromFirestore)
+            .toList();
+        applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return applications;
+      },
+    );
   }
 
   Stream<List<Application>> streamAllApplications() {

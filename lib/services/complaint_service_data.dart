@@ -41,9 +41,10 @@ class ComplaintServiceData {
   Future<List<Complaint>> getComplaintsByStudentId(String studentId) async {
     final snapshot = await _complaints
         .where('studentId', isEqualTo: studentId)
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map(Complaint.fromFirestore).toList();
+    final complaints = snapshot.docs.map(Complaint.fromFirestore).toList();
+    complaints.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return complaints;
   }
 
   Future<String> createComplaint(Complaint complaint) async {

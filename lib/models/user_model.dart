@@ -39,11 +39,15 @@ class StudentUser {
   static String normalizeRole(String role) {
     final normalized = role.trim().toLowerCase();
     if (normalized == 'dsw_officer' ||
-        normalized == 'dsw director' ||
-        normalized == 'dsw-director') {
+        normalized == 'officer' ||
+        normalized == 'dsw officer' ||
+        normalized == 'dsw-officer') {
       return 'dsw_officer';
     }
-    if (normalized == 'dsw_director' || normalized == 'director') {
+    if (normalized == 'dsw_director' ||
+        normalized == 'director' ||
+        normalized == 'dsw director' ||
+        normalized == 'dsw-director') {
       return 'dsw_director';
     }
     if (normalized == 'student' || normalized == 'user') {

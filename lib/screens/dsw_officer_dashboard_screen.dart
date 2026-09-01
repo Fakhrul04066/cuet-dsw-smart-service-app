@@ -61,7 +61,7 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
           complaint.priority == 'URGENT' || complaint.priority == 'HIGH';
       await NotificationService.instance.createForCurrentUserIfMissing(
         title: urgent ? 'Urgent complaint' : 'New complaint',
-        message: '${complaint.title} is available for review.',
+        message: '${complaint.title} is ready for official processing.',
         type: urgent ? 'urgent_complaint' : 'new_complaint',
         referenceId: complaint.id,
       );
@@ -77,47 +77,51 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
   }
 
   Future<void> _handleDecision(Application application, String decision) async {
-    final comment = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: Text(_decisionTitle(decision)),
-          content: TextField(
-            controller: controller,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'Add a comment',
-              border: OutlineInputBorder(),
+    String? officialNote;
+
+    if (decision != 'review') {
+      officialNote = await showDialog<String>(
+        context: context,
+        builder: (context) {
+          final controller = TextEditingController();
+          return AlertDialog(
+            title: Text(_decisionTitle(decision)),
+            content: TextField(
+              controller: controller,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Official Note',
+                hintText: 'Enter the official note for this decision',
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.pop(context, controller.text.trim()),
+                child: const Text('Save Note'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (officialNote == null) return;
+      if (officialNote.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('An official note is required for this action.'),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-    if (comment == null) {
-      return;
-    }
-    if ((decision == 'request_correction' || decision == 'reject') &&
-        comment.trim().isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('A reason is required for this action.'),
-          ),
-        );
+          );
+        }
+        return;
       }
-      return;
     }
+
     try {
       if (application.type == HallTransferService.applicationType) {
         if (decision == 'review') {
@@ -126,7 +130,7 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
           await HallTransferService.instance.officerDecision(
             applicationId: application.id,
             decision: decision,
-            comment: comment.isEmpty ? null : comment,
+            comment: officialNote,
           );
         }
       } else if (decision == 'review') {
@@ -137,7 +141,7 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
         await CharacterCertificateService.instance.officerDecision(
           applicationId: application.id,
           decision: decision,
-          comment: comment.isEmpty ? null : comment,
+          comment: officialNote,
         );
       }
       if (!mounted) return;
@@ -156,7 +160,7 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
   }
 
   String _decisionTitle(String decision) => switch (decision) {
-    'review' => 'Review Application',
+    'review' => 'Start Processing',
     'request_correction' => 'Request Correction',
     'reject' => 'Reject Application',
     'approve' => 'Approve Application',
@@ -235,7 +239,7 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 4),
-            const Text('Review applications and complaints by priority.'),
+            const Text('Process applications and complaints by priority.'),
             const SizedBox(height: 20),
             _SummaryGrid(
               items: [
@@ -392,30 +396,37 @@ class _ApplicationList extends StatelessWidget {
       itemCount: applications.length,
       itemBuilder: (context, index) {
         final application = applications[index];
-        final actions =
-            application.status == 'SUBMITTED' ||
-                application.status == 'CORRECTION_REQUIRED'
-            ? <Widget>[
-                OutlinedButton(
-                  onPressed: () => onDecision(application, 'review'),
-                  child: const Text('Start review'),
-                ),
-              ]
-            : <Widget>[
-                OutlinedButton(
-                  onPressed: () =>
-                      onDecision(application, 'request_correction'),
-                  child: const Text('Request correction'),
-                ),
-                OutlinedButton(
-                  onPressed: () => onDecision(application, 'reject'),
-                  child: const Text('Reject'),
-                ),
-                FilledButton(
-                  onPressed: () => onDecision(application, 'approve'),
-                  child: const Text('Approve'),
-                ),
-              ];
+        final actions = <Widget>[];
+        if (application.status == 'SUBMITTED') {
+          actions.add(
+            OutlinedButton(
+              onPressed: () => onDecision(application, 'review'),
+              child: const Text('Start processing'),
+            ),
+          );
+        } else if (application.status == 'OFFICER_REVIEW') {
+          actions.addAll([
+            OutlinedButton(
+              onPressed: () => onDecision(application, 'request_correction'),
+              child: const Text('Request correction'),
+            ),
+            OutlinedButton(
+              onPressed: () => onDecision(application, 'reject'),
+              child: const Text('Reject'),
+            ),
+            FilledButton(
+              onPressed: () => onDecision(application, 'approve'),
+              child: const Text('Approve'),
+            ),
+          ]);
+        } else if (application.status == 'CORRECTION_REQUIRED') {
+          actions.add(
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Waiting for student correction and resubmission.'),
+            ),
+          );
+        }
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -426,7 +437,9 @@ class _ApplicationList extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   title: Text(application.id),
                   subtitle: Text(
-                    '${application.studentId}\n${application.purpose}',
+                    application.type == HallTransferService.applicationType
+                        ? '${application.studentId}\n${application.currentHall ?? '-'} → ${application.requestedHall ?? '-'}'
+                        : '${application.studentId}\n${application.purpose}',
                   ),
                   isThreeLine: true,
                   trailing: StatusChip(label: application.status),

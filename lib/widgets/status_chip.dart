@@ -10,13 +10,13 @@ class StatusChip extends StatelessWidget {
       case 'SUBMITTED':
         return 'Submitted';
       case 'OFFICER_REVIEW':
-        return 'Officer Review';
+        return 'Officer Processing';
       case 'CORRECTION_REQUIRED':
         return 'Correction Required';
       case 'OFFICER_APPROVED':
         return 'Officer Approved';
       case 'DIRECTOR_REVIEW':
-        return 'Director Review';
+        return 'Director Processing';
       case 'APPROVED':
         return 'Approved';
       case 'CERTIFICATE_ISSUED':
@@ -34,7 +34,7 @@ class StatusChip extends StatelessWidget {
       case 'Submitted':
         return const Color(0xFFE3F2FD);
       case 'OFFICER_REVIEW':
-      case 'Officer Review':
+      case 'Officer Processing':
         return const Color(0xFFFFF3CD);
       case 'CORRECTION_REQUIRED':
       case 'Correction Required':
@@ -43,7 +43,7 @@ class StatusChip extends StatelessWidget {
       case 'Officer Approved':
         return const Color(0xFFE8EAF6);
       case 'DIRECTOR_REVIEW':
-      case 'Director Review':
+      case 'Director Processing':
         return const Color(0xFFE0F7FA);
       case 'APPROVED':
       case 'Approved':
@@ -65,7 +65,7 @@ class StatusChip extends StatelessWidget {
       case 'Submitted':
         return const Color(0xFF1565C0);
       case 'OFFICER_REVIEW':
-      case 'Officer Review':
+      case 'Officer Processing':
         return const Color(0xFF9C6B00);
       case 'CORRECTION_REQUIRED':
       case 'Correction Required':
@@ -74,7 +74,7 @@ class StatusChip extends StatelessWidget {
       case 'Officer Approved':
         return const Color(0xFF3949AB);
       case 'DIRECTOR_REVIEW':
-      case 'Director Review':
+      case 'Director Processing':
         return const Color(0xFF00838F);
       case 'APPROVED':
       case 'Approved':

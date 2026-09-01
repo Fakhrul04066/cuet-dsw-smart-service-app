@@ -3,11 +3,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/application.dart';
 import '../models/application_history.dart';
+import '../models/user_model.dart';
 import '../services/application_service.dart';
 import '../services/application_history_service.dart';
 import '../services/character_certificate_service.dart';
+import '../services/certificate_pdf_service.dart';
 import '../services/hall_transfer_service.dart';
+import '../services/user_service.dart';
 import '../widgets/status_chip.dart';
+import 'certificate_preview_screen.dart';
 
 class ApplicationDetailsScreen extends StatelessWidget {
   final Application application;
@@ -25,17 +29,7 @@ class ApplicationDetailsScreen extends StatelessWidget {
           );
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Application Details'),
-        actions: [
-          if (application.status == 'CORRECTION_REQUIRED')
-            IconButton(
-              tooltip: 'Edit and resubmit',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _showResubmitDialog(context),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Application Details')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
@@ -147,12 +141,12 @@ class ApplicationDetailsScreen extends StatelessWidget {
                 children: [
                   if ((application.officerComment ?? '').isNotEmpty)
                     _DetailRow(
-                      label: 'Officer',
+                      label: 'Officer Official Note',
                       value: application.officerComment!,
                     ),
                   if ((application.directorComment ?? '').isNotEmpty)
                     _DetailRow(
-                      label: 'Director',
+                      label: 'Director Official Note',
                       value: application.directorComment!,
                     ),
                   if ((application.officerComment ?? '').isEmpty &&
@@ -160,6 +154,27 @@ class ApplicationDetailsScreen extends StatelessWidget {
                     const Text('No notes available at this time.'),
                 ],
               ),
+              if (application.status == 'CORRECTION_REQUIRED') ...[
+                const SizedBox(height: 16),
+                FutureBuilder<StudentUser?>(
+                  future: UserService.instance.getCurrentUserProfile(),
+                  builder: (context, snapshot) {
+                    final profile = snapshot.data;
+                    final canResubmit = profile != null &&
+                        StudentUser.normalizeRole(profile.role) == 'student' &&
+                        profile.studentId == application.studentId;
+                    if (!canResubmit) return const SizedBox.shrink();
+                    return SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => _showResubmitDialog(context),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Correct and Resubmit'),
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 16),
               FutureBuilder<List<ApplicationHistory>>(
                 future: ApplicationHistoryService.instance
@@ -176,6 +191,26 @@ class ApplicationDetailsScreen extends StatelessWidget {
                       .toList(),
                 ),
               ),
+              if (!isHallTransfer &&
+                  application.status ==
+                      CharacterCertificateStatus.certificateIssued) ...[
+                const SizedBox(height: 16),
+                FutureBuilder<StudentUser?>(
+                  future: UserService.instance.getCurrentUserProfile(),
+                  builder: (context, snapshot) {
+                    final profile = snapshot.data;
+                    if (profile == null ||
+                        StudentUser.normalizeRole(profile.role) != 'student' ||
+                        profile.studentId != application.studentId) {
+                      return const SizedBox.shrink();
+                    }
+                    return _CertificateActions(
+                      application: application,
+                      student: profile,
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 20),
               Text(
                 'Status Timeline',
@@ -252,15 +287,17 @@ class ApplicationDetailsScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: purpose,
-                decoration: const InputDecoration(labelText: 'Purpose'),
-              ),
-              TextField(
-                controller: description,
-                maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Description'),
-              ),
+              if (application.type != HallTransferService.applicationType) ...[
+                TextField(
+                  controller: purpose,
+                  decoration: const InputDecoration(labelText: 'Purpose'),
+                ),
+                TextField(
+                  controller: description,
+                  maxLines: 4,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+              ],
               if (application.type == HallTransferService.applicationType) ...[
                 TextField(
                   controller: currentHall,
@@ -306,7 +343,7 @@ class ApplicationDetailsScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Application resubmitted for officer review.'),
+            content: Text('Application resubmitted for officer processing.'),
           ),
         );
         Navigator.pop(context);
@@ -318,6 +355,74 @@ class ApplicationDetailsScreen extends StatelessWidget {
         ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
+  }
+}
+
+class _CertificateActions extends StatelessWidget {
+  final Application application;
+  final StudentUser student;
+
+  const _CertificateActions({
+    required this.application,
+    required this.student,
+  });
+
+  Future<void> _run(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Certificate error: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _InfoCard(
+      title: 'Issued Certificate',
+      children: [
+        const Text(
+          'Your Character Certificate has been issued. You can preview it or '
+          'save/share the PDF using your device.',
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CertificatePreviewScreen(
+                    application: application,
+                    student: student,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('View Certificate'),
+            ),
+            FilledButton.icon(
+              onPressed: () => _run(
+                context,
+                () => CertificatePdfService.instance.downloadCertificate(
+                  application: application,
+                  student: student,
+                ),
+              ),
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Download PDF'),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 

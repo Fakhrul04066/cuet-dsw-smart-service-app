@@ -26,13 +26,13 @@ class HallTransferStatus {
       case submitted:
         return 'Submitted';
       case officerReview:
-        return 'Officer Review';
+        return 'Officer Processing';
       case correctionRequired:
         return 'Correction Required';
       case officerApproved:
         return 'Officer Approved';
       case directorReview:
-        return 'Director Review';
+        return 'Director Processing';
       case approved:
         return 'Approved';
       case rejected:
@@ -68,7 +68,6 @@ class HallTransferService {
   static const Map<String, Set<String>> _validTransitions = {
     HallTransferStatus.submitted: {
       HallTransferStatus.officerReview,
-      HallTransferStatus.rejected,
     },
     HallTransferStatus.officerReview: {
       HallTransferStatus.correctionRequired,
@@ -77,11 +76,9 @@ class HallTransferService {
     },
     HallTransferStatus.correctionRequired: {
       HallTransferStatus.officerReview,
-      HallTransferStatus.rejected,
     },
     HallTransferStatus.officerApproved: {
       HallTransferStatus.directorReview,
-      HallTransferStatus.rejected,
     },
     HallTransferStatus.directorReview: {
       HallTransferStatus.approved,
@@ -171,14 +168,13 @@ class HallTransferService {
   Future<Application> reviewForOfficer(String applicationId) async {
     final actor = await _staff('dsw_officer');
     final application = await _get(applicationId);
-    if (application.status != HallTransferStatus.submitted &&
-        application.status != HallTransferStatus.correctionRequired) {
+    if (application.status != HallTransferStatus.submitted) {
       return application;
     }
     return _changeStatus(
       application,
       HallTransferStatus.officerReview,
-      'Officer moved the hall transfer request to review.',
+      'Officer started processing the hall transfer request.',
       'review',
       actor: actor,
       actorRole: 'dsw_officer',
@@ -190,9 +186,9 @@ class HallTransferService {
     required String decision,
     String? comment,
   }) async {
-    if ((decision == 'request_correction' || decision == 'reject') &&
+    if ((decision == 'request_correction' || decision == 'reject' || decision == 'approve') &&
         (comment == null || comment.trim().isEmpty)) {
-      throw StateError('A reason is required for this officer decision.');
+      throw StateError('An official note is required for this officer decision.');
     }
     final actor = await _staff('dsw_officer');
     final application = await _get(applicationId);
@@ -222,7 +218,7 @@ class HallTransferService {
     return _changeStatus(
       application,
       HallTransferStatus.directorReview,
-      'Director moved the hall transfer request to review.',
+      'Director started processing the hall transfer request.',
       'review',
       actor: actor,
       actorRole: 'dsw_director',
@@ -234,8 +230,9 @@ class HallTransferService {
     required String decision,
     String? comment,
   }) async {
-    if (decision == 'reject' && (comment == null || comment.trim().isEmpty)) {
-      throw StateError('A reason is required for this director decision.');
+    if ((decision == 'approve' || decision == 'reject') &&
+        (comment == null || comment.trim().isEmpty)) {
+      throw StateError('An official note is required for this director decision.');
     }
     final actor = await _staff('dsw_director');
     final application = await _get(applicationId);
@@ -245,7 +242,7 @@ class HallTransferService {
       _ => throw StateError('Unsupported director decision.'),
     };
     _ensureTransition(application.status, nextStatus, 'DSW Director');
-    return _changeStatus(
+    final updated = await _changeStatus(
       application,
       nextStatus,
       comment ?? 'Director updated the hall transfer request.',
@@ -253,6 +250,16 @@ class HallTransferService {
       actor: actor,
       actorRole: 'dsw_director',
     );
+
+    if (decision == 'approve') {
+      await UserService.instance.updateStudentHallAfterApprovedTransfer(
+        studentUid: application.studentUid,
+        studentId: application.studentId,
+        hall: application.requestedHall ?? '',
+      );
+    }
+
+    return updated;
   }
 
   Future<Application> _get(String id) async {
@@ -286,22 +293,31 @@ class HallTransferService {
       'CHANGE_STATUS_START: applicationId=${application.id}, toStatus=$status, actorRole=$actorRole',
     );
 
-    final updated = application.copyWith(
+    var updated = application.copyWith(
       status: status,
-      officerComment: actorRole == 'dsw_officer'
-          ? comment
-          : application.officerComment,
-      directorComment: actorRole == 'dsw_director'
-          ? comment
-          : application.directorComment,
       updatedAt: DateTime.now(),
     );
+    final isDecision = auditAction != 'review';
+    if (isDecision && actorRole == 'dsw_officer') {
+      updated = updated.copyWith(officerComment: comment);
+    } else if (isDecision && actorRole == 'dsw_director') {
+      updated = updated.copyWith(directorComment: comment);
+    }
 
     try {
       developer.log(
         'CHANGE_STATUS_APPLICATION_UPDATE_START: applicationId=${application.id}',
       );
-      await _applicationService.updateApplication(application.id, updated);
+      await _applicationService.updateWorkflowStatus(
+        application.id,
+        status: status,
+        officerComment: isDecision && actorRole == 'dsw_officer'
+            ? comment
+            : null,
+        directorComment: isDecision && actorRole == 'dsw_director'
+            ? comment
+            : null,
+      );
       developer.log(
         'CHANGE_STATUS_APPLICATION_UPDATE_OK: applicationId=${application.id}',
       );
@@ -334,29 +350,6 @@ class HallTransferService {
     }
 
     try {
-      if (application.studentUid.isNotEmpty) {
-        developer.log(
-          'CHANGE_STATUS_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
-        );
-        await NotificationService.instance.createNotification(
-          userUid: application.studentUid,
-          title: 'Application status updated',
-          message: 'Your hall transfer application is now $status.',
-          type: 'application_status',
-          referenceId: application.id,
-        );
-        developer.log(
-          'CHANGE_STATUS_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
-        );
-      }
-    } catch (e) {
-      developer.log(
-        'CHANGE_STATUS_NOTIFICATION_WRITE_FAILED: ${e.runtimeType} $e',
-      );
-      rethrow;
-    }
-
-    try {
       if (actor != null && actorRole != null) {
         developer.log(
           'CHANGE_STATUS_AUDIT_WRITE_START: applicationId=${application.id}',
@@ -385,6 +378,34 @@ class HallTransferService {
     } catch (e) {
       developer.log('CHANGE_STATUS_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
       rethrow;
+    }
+
+    if (application.studentUid.isEmpty) {
+      developer.log(
+        'CHANGE_STATUS_NOTIFICATION_SKIPPED: legacy application has no studentUid',
+      );
+    } else {
+      try {
+        developer.log(
+          'CHANGE_STATUS_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
+        );
+        await NotificationService.instance.createNotification(
+          userUid: application.studentUid,
+          title: 'Application status updated',
+          message: 'Your hall transfer application is now $status.',
+          type: 'application_status',
+          referenceId: application.id,
+        );
+        developer.log(
+          'CHANGE_STATUS_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
+        );
+      } catch (error) {
+        // Notification delivery is secondary to the authoritative application,
+        // history, and audit writes above.
+        developer.log(
+          'CHANGE_STATUS_NOTIFICATION_WRITE_FAILED: ${error.runtimeType} $error',
+        );
+      }
     }
 
     developer.log('CHANGE_STATUS_OK: applicationId=${application.id}');

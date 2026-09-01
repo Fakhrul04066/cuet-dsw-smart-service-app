@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/application.dart';
 import '../models/complaint.dart';
 import '../services/auth_service.dart';
+import '../services/application_service.dart';
 import '../services/character_certificate_service.dart';
 import '../services/hall_transfer_service.dart';
 import '../services/complaint_service_data.dart';
@@ -82,23 +83,35 @@ class _DirectorApplicationList extends StatelessWidget {
       itemCount: applications.length,
       itemBuilder: (context, index) {
         final application = applications[index];
-        final actions = application.status == 'OFFICER_APPROVED'
-            ? <Widget>[
-                OutlinedButton(
-                  onPressed: () => onDecision(application, 'review'),
-                  child: const Text('Start review'),
-                ),
-              ]
-            : <Widget>[
-                OutlinedButton(
-                  onPressed: () => onDecision(application, 'reject'),
-                  child: const Text('Reject'),
-                ),
-                FilledButton(
-                  onPressed: () => onDecision(application, 'approve'),
-                  child: const Text('Approve'),
-                ),
-              ];
+        final actions = <Widget>[];
+        if (application.status == 'OFFICER_APPROVED') {
+          actions.add(
+            OutlinedButton(
+              onPressed: () => onDecision(application, 'review'),
+              child: const Text('Start processing'),
+            ),
+          );
+        } else if (application.status == 'DIRECTOR_REVIEW') {
+          actions.addAll([
+            OutlinedButton(
+              onPressed: () => onDecision(application, 'reject'),
+              child: const Text('Reject'),
+            ),
+            FilledButton(
+              onPressed: () => onDecision(application, 'approve'),
+              child: const Text('Approve'),
+            ),
+          ]);
+        } else if (application.type == 'character_certificate' &&
+            application.status == 'APPROVED') {
+          actions.add(
+            FilledButton.icon(
+              onPressed: () => onDecision(application, 'issue_certificate'),
+              icon: const Icon(Icons.workspace_premium_outlined),
+              label: const Text('Issue Certificate'),
+            ),
+          );
+        }
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -109,7 +122,9 @@ class _DirectorApplicationList extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   title: Text(application.id),
                   subtitle: Text(
-                    '${application.studentId}\n${application.purpose}',
+                    application.type == HallTransferService.applicationType
+                        ? '${application.studentId}\n${application.currentHall ?? '-'} → ${application.requestedHall ?? '-'}'
+                        : '${application.studentId}\n${application.purpose}',
                   ),
                   isThreeLine: true,
                   trailing: StatusChip(label: application.status),
@@ -154,13 +169,13 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
       CharacterCertificateService.instance.getDirectorQueue(),
       HallTransferService.instance.getDirectorQueue(),
     ]);
-    final applications = [...queues[0], ...queues[1]];
-    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    for (final application in applications) {
+    final reviewApplications = [...queues[0], ...queues[1]];
+    reviewApplications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    for (final application in reviewApplications) {
       await NotificationService.instance.createForCurrentUserIfMissing(
-        title: 'Application waiting for review',
+        title: 'Application waiting for action',
         message:
-            'A ${application.type.replaceAll('_', ' ')} is waiting for Director review.',
+            'A ${application.type.replaceAll('_', ' ')} is waiting for Director action.',
         type: 'director_review',
         referenceId: application.id,
       );
@@ -178,6 +193,30 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
         referenceId: complaint.id,
       );
     }
+    // The review queue intentionally excludes final decisions, but the
+    // dashboard summary must still count them. Fetch final application states
+    // separately and merge by document ID so approved/rejected totals remain
+    // correct without changing what the Director can act on.
+    final finalStateGroups = await Future.wait([
+      ApplicationService.instance.getApplicationsByStatus('APPROVED'),
+      ApplicationService.instance.getApplicationsByStatus(
+        'CERTIFICATE_ISSUED',
+      ),
+      ApplicationService.instance.getApplicationsByStatus('REJECTED'),
+    ]);
+
+    final applicationsById = <String, Application>{
+      for (final application in reviewApplications)
+        application.id: application,
+    };
+    for (final group in finalStateGroups) {
+      for (final application in group) {
+        applicationsById[application.id] = application;
+      }
+    }
+
+    final applications = applicationsById.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return applications;
   }
 
@@ -189,45 +228,50 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
   }
 
   Future<void> _handleDecision(Application application, String decision) async {
-    final comment = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: Text(_decisionTitle(decision)),
-          content: TextField(
-            controller: controller,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'Add director comment',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(controller.text.trim()),
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
+    String? officialNote;
+    final needsOfficialNote = decision != 'review' && decision != 'issue_certificate';
 
-    if (comment == null) {
-      return;
-    }
-    if (decision == 'reject' && comment.trim().isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('A rejection reason is required.')),
-        );
+    if (needsOfficialNote) {
+      officialNote = await showDialog<String>(
+        context: context,
+        builder: (context) {
+          final controller = TextEditingController();
+          return AlertDialog(
+            title: Text(_decisionTitle(decision)),
+            content: TextField(
+              controller: controller,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Official Note',
+                hintText: 'Enter the official note for this decision',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(controller.text.trim()),
+                child: const Text('Save Note'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (officialNote == null) return;
+      if (officialNote.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('An official note is required for this action.'),
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     try {
@@ -238,7 +282,7 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
           await HallTransferService.instance.directorDecision(
             applicationId: application.id,
             decision: decision,
-            comment: comment.isEmpty ? null : comment,
+            comment: officialNote,
           );
         }
       } else if (decision == 'review') {
@@ -249,7 +293,7 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
         await CharacterCertificateService.instance.directorDecision(
           applicationId: application.id,
           decision: decision,
-          comment: comment.isEmpty ? null : comment,
+          comment: decision == 'issue_certificate' ? null : officialNote,
         );
       }
       if (!mounted) return;
@@ -270,7 +314,7 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
   String _decisionTitle(String decision) {
     switch (decision) {
       case 'review':
-        return 'Director Review';
+        return 'Start Processing';
       case 'approve':
         return 'Approve Application';
       case 'reject':
@@ -365,7 +409,12 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
                     .where((item) => ['HIGH', 'URGENT'].contains(item.priority))
                     .length;
                 final approved = applications
-                    .where((item) => item.status == 'APPROVED')
+                    .where(
+                      (item) => [
+                        'APPROVED',
+                        'CERTIFICATE_ISSUED',
+                      ].contains(item.status),
+                    )
                     .length;
                 final rejected = applications
                     .where((item) => item.status == 'REJECTED')
@@ -393,7 +442,7 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
                     _DirectorSummary(
                       items: [
                         (
-                          'Pending review',
+                          'Pending action',
                           directorPending,
                           Icons.pending_actions_outlined,
                         ),
@@ -434,7 +483,12 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
                             applications: applications
                                 .where(
                                   (item) =>
-                                      item.type == 'character_certificate',
+                                      item.type == 'character_certificate' &&
+                                      [
+                                        'OFFICER_APPROVED',
+                                        'DIRECTOR_REVIEW',
+                                        'APPROVED',
+                                      ].contains(item.status),
                                 )
                                 .toList(),
                             onDecision: _handleDecision,
@@ -444,7 +498,11 @@ class _DSWDirectorDashboardScreenState extends State<DSWDirectorDashboardScreen>
                                 .where(
                                   (item) =>
                                       item.type ==
-                                      HallTransferService.applicationType,
+                                          HallTransferService.applicationType &&
+                                      [
+                                        'OFFICER_APPROVED',
+                                        'DIRECTOR_REVIEW',
+                                      ].contains(item.status),
                                 )
                                 .toList(),
                             onDecision: _handleDecision,

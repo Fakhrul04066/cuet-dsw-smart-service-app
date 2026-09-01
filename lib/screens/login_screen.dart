@@ -43,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'dsw_officer':
         return 'Manage student welfare services';
       case 'dsw_director':
-        return 'Review and approve institutional actions';
+        return 'Process and approve institutional actions';
       default:
         return 'Access your student welfare services';
     }

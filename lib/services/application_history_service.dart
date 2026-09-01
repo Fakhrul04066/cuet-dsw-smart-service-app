@@ -18,9 +18,10 @@ class ApplicationHistoryService {
   ) async {
     final snapshot = await _history
         .where('applicationId', isEqualTo: applicationId)
-        .orderBy('timestamp', descending: true)
         .get();
-    return snapshot.docs.map(ApplicationHistory.fromFirestore).toList();
+    final history = snapshot.docs.map(ApplicationHistory.fromFirestore).toList();
+    history.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return history;
   }
 
   Future<String> addHistoryEntry(ApplicationHistory item) async {
@@ -33,13 +34,12 @@ class ApplicationHistoryService {
   Stream<List<ApplicationHistory>> streamHistoryForApplication(
     String applicationId,
   ) {
-    return _history
-        .where('applicationId', isEqualTo: applicationId)
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs.map(ApplicationHistory.fromFirestore).toList(),
-        );
+    return _history.where('applicationId', isEqualTo: applicationId).snapshots().map(
+      (snapshot) {
+        final history = snapshot.docs.map(ApplicationHistory.fromFirestore).toList();
+        history.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        return history;
+      },
+    );
   }
 }
