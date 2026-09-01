@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
-import '../services/ai_assistant_service.dart';
 import '../services/firebase_auth_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -439,7 +438,6 @@ class _AdminDetailsScreenState extends State<_AdminDetailsScreen> {
               );
             },
           ),
-          _buildAiRecommendationCard(),
           TextField(
             controller: _note,
             maxLines: 3,
@@ -457,75 +455,6 @@ class _AdminDetailsScreenState extends State<_AdminDetailsScreen> {
                   ),
                 )
                 .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAiRecommendationCard() {
-    final title =
-        widget.document.data()['title']?.toString() ??
-        widget.document.data()['studentName']?.toString() ??
-        'Complaint';
-    final description =
-        widget.document.data()['description']?.toString() ??
-        widget.document.data()['reason']?.toString() ??
-        title;
-    final recommendation = GeminiAssistantService.instance.triageComplaint(
-      title: title,
-      description: description,
-      category: widget.document.data()['category']?.toString(),
-    );
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7FB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE0E7F1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.smart_toy_outlined),
-              const SizedBox(width: 8),
-              Text(
-                'AI Recommendation',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text('Suggested Category: ${recommendation['suggestedCategory']}'),
-          Text('Summary: ${recommendation['summary']}'),
-          Text('Urgency: ${recommendation['urgency']}'),
-          Text('Recommended Office: ${recommendation['recommendedOffice']}'),
-          Text('Possible Similar Issue: ${recommendation['similarIssueHint']}'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton.tonal(
-                onPressed: () => _show('Recommendation accepted for review.'),
-                child: const Text('Accept Recommendation'),
-              ),
-              OutlinedButton(
-                onPressed: () => _show(
-                  'Recommendation ignored. Manual review remains required.',
-                ),
-                child: const Text('Ignore'),
-              ),
-              TextButton(
-                onPressed: () =>
-                    _show('Edit manually from the official note field.'),
-                child: const Text('Edit Manually'),
-              ),
-            ],
           ),
         ],
       ),

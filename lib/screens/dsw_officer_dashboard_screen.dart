@@ -6,6 +6,7 @@ import '../services/character_certificate_service.dart';
 import '../services/hall_transfer_service.dart';
 import '../widgets/status_chip.dart';
 import 'application_details_screen.dart';
+import 'complaint_management_screen.dart';
 import 'login_screen.dart';
 
 class DSWOfficerDashboardScreen extends StatefulWidget {
@@ -128,6 +129,16 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen> {
       appBar: AppBar(
         title: const Text('DSW Officer Dashboard'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.support_agent_outlined),
+            tooltip: 'Complaints',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ComplaintManagementScreen(),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout_rounded),
             tooltip: 'Logout',

@@ -144,7 +144,7 @@ service cloud.firestore {
       allow create: if signedIn() &&
         isStudent() &&
         request.resource.data.studentId == currentStudentId() &&
-        request.resource.data.status == 'Submitted' &&
+        request.resource.data.status == 'SUBMITTED' &&
         request.resource.data.title is string &&
         request.resource.data.description is string &&
         request.resource.data.category is string &&
@@ -161,21 +161,33 @@ service cloud.firestore {
           isStudent() &&
           resource.data.studentId == currentStudentId() &&
           request.resource.data.studentId == resource.data.studentId &&
-          request.resource.data.status in ['Submitted']
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.status == 'SUBMITTED'
         ) ||
         (
           isOfficer() &&
           request.resource.data.studentId == resource.data.studentId &&
-          request.resource.data.status in ['Submitted', 'Assigned', 'In Progress', 'Resolved', 'Closed']
+          request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
         ) ||
         (
           isDirector() &&
           request.resource.data.studentId == resource.data.studentId &&
-          request.resource.data.status in ['Submitted', 'Assigned', 'In Progress', 'Resolved', 'Closed']
+          request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
         )
       );
 
       allow delete: if false;
+
+      match /statusHistory/{historyId} {
+        allow read: if signedIn() && (
+          (isStudent() && complaintDoc(complaintId).data.studentId == currentStudentId()) ||
+          isOfficer() || isDirector()
+        );
+        allow create: if signedIn() && (
+          isOfficer() || isDirector() ||
+          (isStudent() && complaintDoc(complaintId).data.studentId == currentStudentId())
+        ) && request.resource.data.status in ['SUBMITTED', 'OFFICER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+      }
     }
 
     match /notifications/{notificationId} {

@@ -1,22 +1,26 @@
 import 'package:flutter/material.dart';
 
+import '../models/complaint.dart';
+import '../services/complaint_service_data.dart';
+import '../services/user_service.dart';
 import '../widgets/custom_text_field.dart';
+import '../widgets/status_chip.dart';
 
 class ComplaintScreen extends StatefulWidget {
   const ComplaintScreen({super.key});
-
   @override
   State<ComplaintScreen> createState() => _ComplaintScreenState();
 }
 
 class _ComplaintScreenState extends State<ComplaintScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String _selectedCategory = 'Hall Facilities';
+  final _title = TextEditingController();
+  final _description = TextEditingController();
+  late final Future<dynamic> _profile;
+  String _category = 'Hall Facilities';
   bool _confidential = false;
-
-  final List<String> _categories = [
+  bool _saving = false;
+  final _categories = const [
     'Hall Facilities',
     'Academic',
     'Student Welfare',
@@ -26,190 +30,238 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
   ];
 
   @override
-  void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-  void _submitComplaint() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Complaint Submitted'),
-        content: const Text(
-          'Your complaint has been submitted successfully.\n\nTracking Number: CMP-2026-0021',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  void initState() {
+    super.initState();
+    _profile = UserService.instance.getCurrentUserProfile();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Student Complaint')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Submit a complaint to DSW',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: 'Complaint Category',
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit(dynamic profile) async {
+    if (!_formKey.currentState!.validate()) return;
+    if (profile == null || profile.studentId.isEmpty) {
+      _message('Complete your student profile before submitting a complaint.');
+      return;
+    }
+    setState(() => _saving = true);
+    final now = DateTime.now();
+    final id = now.microsecondsSinceEpoch.toString();
+    final complaint = Complaint(
+      id: id,
+      trackingNumber: 'CMP-${now.year}-${id.substring(id.length - 6)}',
+      studentId: profile.studentId,
+      title: _title.text.trim(),
+      description: _description.text.trim(),
+      category: _category,
+      priority: 'NORMAL',
+      status: 'SUBMITTED',
+      createdAt: now,
+      updatedAt: now,
+      isConfidential: _confidential,
+    );
+    try {
+      await ComplaintServiceData.instance.createComplaint(complaint);
+      if (!mounted) return;
+      _title.clear();
+      _description.clear();
+      setState(() => _saving = false);
+      _message(
+        'Complaint submitted. Tracking number: ${complaint.trackingNumber}',
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _saving = false);
+        _message('Could not submit complaint: $error');
+      }
+    }
+  }
+
+  void _message(String text) => showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('Complaint'),
+      content: Text(text),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Student Complaint')),
+    body: FutureBuilder<dynamic>(
+      future: _profile,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final profile = snapshot.data;
+        return StreamBuilder<List<Complaint>>(
+          stream: ComplaintServiceData.instance.streamComplaintsForStudent(
+            profile.studentId,
+          ),
+          builder: (context, complaints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Submit a complaint to DSW',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  items: _categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedCategory = value ?? _selectedCategory;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                CustomTextField(
-                  controller: _titleController,
-                  labelText: 'Complaint Title',
-                  prefixIcon: Icons.title_rounded,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please enter a complaint title'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                CustomTextField(
-                  controller: _descriptionController,
-                  labelText: 'Detailed Description',
-                  prefixIcon: Icons.description_outlined,
-                  maxLines: 6,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please describe the complaint'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _confidential,
-                  onChanged: (value) {
-                    setState(() {
-                      _confidential = value ?? false;
-                    });
-                  },
-                  title: const Text('Mark as confidential complaint'),
-                ),
-                if (_confidential) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF1FF),
-                      borderRadius: BorderRadius.circular(18),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    initialValue: _category,
+                    decoration: const InputDecoration(
+                      labelText: 'Complaint Category',
                     ),
-                    child: const Text(
-                      'Confidential complaints will have restricted visibility to authorized officials.',
+                    items: _categories
+                        .map(
+                          (item) =>
+                              DropdownMenuItem(value: item, child: Text(item)),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setState(() => _category = value ?? _category),
+                  ),
+                  const SizedBox(height: 16),
+                  CustomTextField(
+                    controller: _title,
+                    labelText: 'Complaint Title',
+                    prefixIcon: Icons.title_rounded,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Please enter a complaint title'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  CustomTextField(
+                    controller: _description,
+                    labelText: 'Detailed Description',
+                    prefixIcon: Icons.description_outlined,
+                    maxLines: 6,
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Please describe the complaint'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _confidential,
+                    onChanged: (value) =>
+                        setState(() => _confidential = value ?? false),
+                    title: const Text('Mark as confidential complaint'),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : () => _submit(profile),
+                      child: Text(
+                        _saving ? 'Submitting...' : 'Submit Complaint',
+                      ),
                     ),
                   ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'My complaints',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  if (complaints.hasError)
+                    const Text('Could not load your complaints.')
+                  else if (!complaints.hasData || complaints.data!.isEmpty)
+                    const Text('No complaints submitted yet.')
+                  else
+                    ...complaints.data!.map(
+                      (item) => Card(
+                        child: ListTile(
+                          title: Text(item.title),
+                          subtitle: Text(item.trackingNumber),
+                          trailing: StatusChip(label: item.status),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ComplaintDetailsScreen(complaint: item),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
-                const SizedBox(height: 24),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE0E7F1)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.upload_file_rounded,
-                        color: Color(0xFF0D47A1),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Attachment Area',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Upload screenshots, evidence, or supporting documents.',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF4F7FB),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.smart_toy_outlined,
-                            color: Color(0xFF0D47A1),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'AI Complaint Assistance',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'AI support for complaint drafting and issue classification will be added in a future update.',
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _submitComplaint,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text('Submit Complaint'),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
+        );
+      },
+    ),
+  );
+}
+
+class ComplaintDetailsScreen extends StatelessWidget {
+  final Complaint complaint;
+  const ComplaintDetailsScreen({super.key, required this.complaint});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(complaint.trackingNumber)),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                complaint.title,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+            ),
+            StatusChip(label: complaint.status),
+          ],
         ),
-      ),
-    );
-  }
+        const SizedBox(height: 20),
+        Text(complaint.description),
+        const SizedBox(height: 16),
+        Text('Category: ${complaint.category}'),
+        Text('Priority: ${complaint.priority}'),
+        const SizedBox(height: 20),
+        Text(
+          'Officer response',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          complaint.officerResponse?.isNotEmpty == true
+              ? complaint.officerResponse!
+              : 'No response yet.',
+        ),
+        const SizedBox(height: 20),
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: ComplaintServiceData.instance.getStatusHistory(complaint.id),
+          builder: (context, snapshot) => ExpansionTile(
+            title: const Text('Status history'),
+            children: (snapshot.data ?? const <Map<String, dynamic>>[])
+                .map(
+                  (item) => ListTile(
+                    title: Text(item['status']?.toString() ?? ''),
+                    subtitle: Text(item['note']?.toString() ?? ''),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ],
+    ),
+  );
 }

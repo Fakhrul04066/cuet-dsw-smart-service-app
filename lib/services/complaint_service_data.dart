@@ -9,6 +9,14 @@ class ComplaintServiceData {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  static const statuses = [
+    'SUBMITTED',
+    'OFFICER_REVIEW',
+    'IN_PROGRESS',
+    'RESOLVED',
+    'CLOSED',
+  ];
+
   CollectionReference<Map<String, dynamic>> get _complaints =>
       _firestore.collection('complaints');
 
@@ -32,6 +40,11 @@ class ComplaintServiceData {
     );
     final payload = complaint.toFirestore(useServerTimestamps: true);
     await docRef.set(payload, SetOptions(merge: true));
+    await docRef.collection('statusHistory').add({
+      'status': complaint.status,
+      'note': 'Complaint submitted by student.',
+      'changedAt': FieldValue.serverTimestamp(),
+    });
     return docRef.id;
   }
 
@@ -40,6 +53,50 @@ class ComplaintServiceData {
         .copyWith(updatedAt: DateTime.now())
         .toFirestore(useServerTimestamps: true);
     await _complaints.doc(id).update(payload);
+  }
+
+  Future<void> updateComplaintStatus(
+    String id, {
+    required String status,
+    String note = '',
+  }) async {
+    if (!statuses.contains(status)) {
+      throw ArgumentError('Invalid complaint status: $status');
+    }
+    final ref = _complaints.doc(id);
+    await _firestore.runTransaction((transaction) async {
+      transaction.update(ref, {
+        'status': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(ref.collection('statusHistory').doc(), {
+        'status': status,
+        'note': note,
+        'changedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> updateStaffFields(
+    String id, {
+    String? category,
+    String? priority,
+    String? officerResponse,
+  }) async {
+    final fields = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
+    if (category != null) fields['category'] = category;
+    if (priority != null) fields['priority'] = priority;
+    if (officerResponse != null) fields['officerResponse'] = officerResponse;
+    await _complaints.doc(id).update(fields);
+  }
+
+  Future<List<Map<String, dynamic>>> getStatusHistory(String id) async {
+    final snapshot = await _complaints
+        .doc(id)
+        .collection('statusHistory')
+        .orderBy('changedAt')
+        .get();
+    return snapshot.docs.map((doc) => doc.data()).toList();
   }
 
   Future<void> deleteComplaint(String id) async {
