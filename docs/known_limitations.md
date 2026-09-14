@@ -1,17 +1,11 @@
 # Known Limitations
 
-This project is a prototype and is intentionally scoped to the CUET DSW service flows listed in the project requirements.
+The application now implements the requested business workflow and AI-assisted modules, but these items should be completed before an institutional production launch:
 
-## Current limitations
-
-- It is not connected to official CUET SSO or a production identity provider unless that is configured separately.
-- Gemini recommendations are probabilistic and advisory only.
-- Gemini does not make final decisions.
-- Cloudinary and Gemini integrations require backend configuration and secure environment variables.
-- Notification delivery may remain in-app unless Firebase Cloud Messaging is fully configured.
-- The app uses local demo-style flows and sample data for development and demonstration.
-- Additional production-grade review is strongly recommended before real deployment.
-
-## Honest status
-
-The project demonstrates the required architecture and user workflow for the digital student service prototype, but it is not a full production system yet.
+1. AI calls currently originate from the authenticated Flutter client. For stronger trust boundaries, move AI enrichment/duplicate analysis to Cloud Functions or another trusted backend.
+2. Notifications are stored and displayed in Firestore; FCM push delivery is not yet included.
+3. Web App Check requires a deployed web provider/site key if the Flutter web dashboard is used in production.
+4. Analytics uses current Firestore records and does not yet provide configurable date ranges, exports, or scheduled reports.
+5. No formal CUET retention/privacy policy is encoded; institutional policy owners must define those requirements.
+6. Legacy specialized Character Certificate and Hall Transfer workflows coexist with the new unified service-request workflow and can be migrated later.
+7. Automated integration tests require a Flutter/Firebase Emulator environment and should be added to CI before release.

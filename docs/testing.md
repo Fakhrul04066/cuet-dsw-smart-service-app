@@ -1,51 +1,30 @@
-# Testing Guide
+# Testing Plan
 
-## Flutter tests
-
+## Unit/widget tests
 Run:
 
 ```bash
 flutter test
 ```
 
-## Static analysis
+Add tests for:
+- request model serialization
+- workflow transition validation
+- AI response normalization/fallbacks
+- tracking UI and status chips
+- helpdesk unavailable-state handling
 
-Run:
+## Firebase Emulator integration tests
+Test rules for:
+- student can create/read own request
+- student cannot read another student's request
+- student cannot move workflow state
+- staff can start review
+- assignment target must be a DSW officer
+- unassigned/wrong officer cannot resolve another officer's request
+- director override works
+- history is readable by owner/staff and not by unrelated students
+- Storage ownership/MIME/size checks
 
-```bash
-flutter analyze
-```
-
-## Core test coverage areas
-
-- login form validation
-- character certificate form validation
-- hall transfer form validation
-- complaint form validation
-- workflow navigation tests
-- AI advisory logic tests
-- failure handling tests for Gemini/unavailable case
-
-## Manual security checks
-
-- student cannot access another student application
-- student cannot modify official decision fields
-- official/admin permissions are enforced
-- confidential complaint access is restricted
-- malformed file upload is rejected
-- oversized upload is rejected
-
-## Cloudinary checks
-
-- valid PDF allowed
-- valid image allowed
-- invalid extension rejected
-- oversized file rejected
-
-## AI checks
-
-- missing field detection
-- unclear text detection
-- complaint category suggestion
-- urgency suggestion
-- safe handling when service fails
+## End-to-end acceptance
+Use `docs/DEPLOYMENT_CHECKLIST.md` as the UAT checklist.

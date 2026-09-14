@@ -94,7 +94,7 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
                   const SizedBox(height: 8),
                 ],
                 if ((result['unclearStatements'] as List).isNotEmpty) ...[
-                  const Text('Suggestions:'),
+                  const Text('Needs more detail:'),
                   ...((result['unclearStatements'] as List).map(
                     (item) => Text('• $item'),
                   )),
@@ -107,10 +107,12 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
                   )),
                   const SizedBox(height: 8),
                 ],
-                const Text('Suggestions:'),
-                ...((result['suggestions'] as List).map(
-                  (item) => Text('• $item'),
-                )),
+                if ((result['suggestions'] as List).isNotEmpty) ...[
+                  const Text('Recommendation:'),
+                  ...((result['suggestions'] as List).map(
+                    (item) => Text('• $item'),
+                  )),
+                ],
               ],
             ),
           ),
@@ -198,7 +200,7 @@ class _HallTransferScreenState extends State<HallTransferScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('File upload is not available in this demo version.'),
+            content: Text('File upload is disabled for this build configuration.'),
           ),
         );
       }

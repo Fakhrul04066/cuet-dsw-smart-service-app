@@ -14,6 +14,9 @@ class Application {
   final List<Map<String, dynamic>> documents;
   final String? officerComment;
   final String? directorComment;
+  final String? correctionNote;
+  final String assignedOfficerUid;
+  final String assignedOfficerName;
   final String? currentHall;
   final String? requestedHall;
   final String? reason;
@@ -32,6 +35,9 @@ class Application {
     this.documents = const [],
     this.officerComment,
     this.directorComment,
+    this.correctionNote,
+    this.assignedOfficerUid = '',
+    this.assignedOfficerName = '',
     this.currentHall,
     this.requestedHall,
     this.reason,
@@ -39,13 +45,10 @@ class Application {
 
   factory Application.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
-  ) {
-    return Application.fromMap(snapshot.data() ?? {}, id: snapshot.id);
-  }
+  ) => Application.fromMap(snapshot.data() ?? {}, id: snapshot.id);
 
   factory Application.fromMap(Map<String, dynamic> data, {String? id}) {
     final now = DateTime.now();
-
     return Application(
       id: id ?? (data['id'] ?? '').toString(),
       type: (data['type'] ?? '').toString(),
@@ -60,39 +63,40 @@ class Application {
       documents: _docList(data['documents']),
       officerComment: _stringOrNull(data['officerComment']),
       directorComment: _stringOrNull(data['directorComment']),
+      correctionNote: _stringOrNull(data['correctionNote']),
+      assignedOfficerUid: (data['assignedOfficerUid'] ?? '').toString(),
+      assignedOfficerName: (data['assignedOfficerName'] ?? '').toString(),
       currentHall: _stringOrNull(data['currentHall']),
       requestedHall: _stringOrNull(data['requestedHall']),
       reason: _stringOrNull(data['reason']),
     );
   }
 
-  Map<String, dynamic> toFirestore({bool useServerTimestamps = false}) {
-    final created = createdAt;
-    final updated = updatedAt;
-
-    return {
-      'id': id,
-      'type': type,
-      'studentId': studentId,
-      'studentUid': studentUid,
-      'status': status,
-      'createdAt': useServerTimestamps
-          ? FieldValue.serverTimestamp()
-          : Timestamp.fromDate(created),
-      'updatedAt': useServerTimestamps
-          ? FieldValue.serverTimestamp()
-          : Timestamp.fromDate(updated),
-      'currentReviewer': currentReviewer,
-      'purpose': purpose,
-      'description': description,
-      'documents': documents,
-      'officerComment': officerComment,
-      'directorComment': directorComment,
-      'currentHall': currentHall,
-      'requestedHall': requestedHall,
-      'reason': reason,
-    };
-  }
+  Map<String, dynamic> toFirestore({bool useServerTimestamps = false}) => {
+        'id': id,
+        'type': type,
+        'studentId': studentId,
+        'studentUid': studentUid,
+        'status': status,
+        'createdAt': useServerTimestamps
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(createdAt),
+        'updatedAt': useServerTimestamps
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(updatedAt),
+        'currentReviewer': currentReviewer,
+        'purpose': purpose,
+        'description': description,
+        'documents': documents,
+        'officerComment': officerComment,
+        'directorComment': directorComment,
+        'correctionNote': correctionNote,
+        'assignedOfficerUid': assignedOfficerUid,
+        'assignedOfficerName': assignedOfficerName,
+        'currentHall': currentHall,
+        'requestedHall': requestedHall,
+        'reason': reason,
+      };
 
   Application copyWith({
     String? id,
@@ -108,56 +112,51 @@ class Application {
     List<Map<String, dynamic>>? documents,
     String? officerComment,
     String? directorComment,
+    String? correctionNote,
+    String? assignedOfficerUid,
+    String? assignedOfficerName,
     String? currentHall,
     String? requestedHall,
     String? reason,
-  }) {
-    return Application(
-      id: id ?? this.id,
-      type: type ?? this.type,
-      studentId: studentId ?? this.studentId,
-      studentUid: studentUid ?? this.studentUid,
-      status: status ?? this.status,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      currentReviewer: currentReviewer ?? this.currentReviewer,
-      purpose: purpose ?? this.purpose,
-      description: description ?? this.description,
-      documents: documents ?? this.documents,
-      officerComment: officerComment ?? this.officerComment,
-      directorComment: directorComment ?? this.directorComment,
-      currentHall: currentHall ?? this.currentHall,
-      requestedHall: requestedHall ?? this.requestedHall,
-      reason: reason ?? this.reason,
-    );
-  }
+  }) => Application(
+        id: id ?? this.id,
+        type: type ?? this.type,
+        studentId: studentId ?? this.studentId,
+        studentUid: studentUid ?? this.studentUid,
+        status: status ?? this.status,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+        currentReviewer: currentReviewer ?? this.currentReviewer,
+        purpose: purpose ?? this.purpose,
+        description: description ?? this.description,
+        documents: documents ?? this.documents,
+        officerComment: officerComment ?? this.officerComment,
+        directorComment: directorComment ?? this.directorComment,
+        correctionNote: correctionNote ?? this.correctionNote,
+        assignedOfficerUid: assignedOfficerUid ?? this.assignedOfficerUid,
+        assignedOfficerName: assignedOfficerName ?? this.assignedOfficerName,
+        currentHall: currentHall ?? this.currentHall,
+        requestedHall: requestedHall ?? this.requestedHall,
+        reason: reason ?? this.reason,
+      );
 
   static DateTime _toDateTime(dynamic value, {required DateTime fallback}) {
-    if (value is Timestamp) {
-      return value.toDate();
-    }
-    if (value is DateTime) {
-      return value;
-    }
-    if (value is int) {
-      return DateTime.fromMillisecondsSinceEpoch(value);
-    }
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
     return fallback;
   }
 
   static String? _stringOrNull(dynamic value) {
     if (value == null) return null;
-    final stringValue = value.toString();
-    return stringValue.isEmpty ? null : stringValue;
+    final valueText = value.toString();
+    return valueText.isEmpty ? null : valueText;
   }
 
-  static List<Map<String, dynamic>> _docList(dynamic value) {
-    if (value is List) {
-      return value
+  static List<Map<String, dynamic>> _docList(dynamic value) => value is List
+      ? value
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
-          .toList();
-    }
-    return const [];
-  }
+          .toList()
+      : const [];
 }

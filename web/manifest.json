@@ -1,11 +1,11 @@
 {
-    "name": "cuet_dsw_app",
-    "short_name": "cuet_dsw_app",
+    "name": "CUET DSW Operations & Student Services",
+    "short_name": "CUET DSW",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Digital student welfare request, complaint, tracking, officer workflow, notification and AI-assisted analytics platform for CUET DSW.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

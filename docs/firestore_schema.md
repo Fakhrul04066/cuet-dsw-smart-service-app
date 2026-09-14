@@ -1,142 +1,46 @@
 # Firestore Schema
 
-Below is the practical schema used by this prototype.
+## users/{uid}
+Core identity/profile document. Roles used by workflow authorization: `student`, `dsw_officer`, `dsw_director`.
 
-## users
+## service_requests/{requestId}
+Key fields:
+- trackingNumber
+- studentUid / studentId / studentName
+- requestType
+- title / description
+- status: SUBMITTED | UNDER_REVIEW | ASSIGNED | RESOLVED
+- priority (official/operational; defaults to NORMAL)
+- assignedOfficerUid / assignedOfficerName
+- documents[]
+- resolutionNote
+- AI advisory fields: aiSummary, aiSuggestedPriority, aiPriorityReason, aiRiskTags, suggestedOffice, aiDuplicateScore, aiDuplicateRequestId, aiDuplicateReason, aiImageAssessment
+- createdAt / updatedAt / resolvedAt
 
-Fields:
+### service_requests/{requestId}/history/{historyId}
+- status
+- action
+- note
+- performedBy
+- timestamp
 
-- uid: string
-- email: string
-- name: string
-- studentId: string
-- department: string
-- level: string
-- term: string
-- phone: string
-- role: string (`student`, `official`, `admin`)
-- createdAt: timestamp
-- updatedAt: timestamp
+## complaints/{complaintId}
+Includes tracking number, student identity, category, title/description, priority, status, assignment fields, attachments and AI advisory fields for category/priority, duplicate detection and image evidence.
 
-## characterCertificates
+### complaints/{complaintId}/statusHistory/{historyId}
+Status timeline for complaint processing.
 
-Fields:
+## notifications/{notificationId}
+- userUid
+- title
+- message
+- type
+- referenceId
+- isRead
+- createdAt
 
-- id: string
-- trackingNumber: string
-- studentUid: string
-- studentId: string
-- studentName: string
-- department: string
-- level: string
-- term: string
-- email: string
-- phone: string
-- purpose: string
-- status: string
-- officialNote: string
-- approvedCertificateUrl: string
-- createdAt: timestamp
-- updatedAt: timestamp
+## audit_logs/{logId}
+Immutable staff workflow audit records.
 
-Subcollection:
-
-- statusHistory
-  - status: string
-  - note: string
-  - changedBy: string
-  - changedAt: timestamp
-
-## hallTransfers
-
-Fields:
-
-- id: string
-- trackingNumber: string
-- studentUid: string
-- studentId: string
-- studentName: string
-- currentHall: string
-- preferredHall: string
-- reason: string
-- status: string
-- officialNote: string
-- evidence: array of document metadata objects (optional)
-- createdAt: timestamp
-- updatedAt: timestamp
-
-Subcollection:
-
-- statusHistory
-  - status: string
-  - note: string
-  - changedBy: string
-  - changedAt: timestamp
-
-## complaints
-
-Fields:
-
-- id: string
-- trackingNumber: string
-- studentUid: string
-- studentId: string
-- category: string
-- title: string
-- description: string
-- isConfidential: boolean
-- status: string
-- assignedOffice: string
-- urgency: string
-- resolutionNote: string
-- feedback: string
-- createdAt: timestamp
-- updatedAt: timestamp
-
-Subcollection:
-
-- statusHistory
-  - status: string
-  - note: string
-  - changedBy: string
-  - changedAt: timestamp
-
-## notifications
-
-Fields:
-
-- id: string
-- userUid: string
-- title: string
-- message: string
-- type: string
-- referenceId: string
-- isRead: boolean
-- createdAt: timestamp
-
-## auditLogs
-
-Fields:
-
-- actorUid: string
-- actorName: string
-- actorRole: string
-- action: string
-- entityType: string
-- entityId: string
-- trackingNumber: string
-- details: string
-- createdAt: timestamp
-
-## Document metadata format
-
-For uploaded documents the metadata should include:
-
-- url: string
-- publicId: string
-- fileName: string
-- fileType: string
-- uploadedAt: timestamp or ISO string
-- uploadedBy: string
-
-This is stored in the application document or a nested metadata array, depending on the backend implementation.
+## applications / application_history
+Legacy Character Certificate and Hall Transfer workflow collections retained for compatibility.

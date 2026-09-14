@@ -1,34 +1,36 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function userProfile(userId) {
-      return get(/databases/$(database)/documents/users/$(userId));
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
     }
 
-    function currentUserDoc() {
-      return signedIn() ? userProfile(request.auth.uid) : null;
+    function userProfile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    function currentUserRole() {
-      return signedIn() && currentUserDoc() != null
-        ? currentUserDoc().data.role
+    function currentRole() {
+      return signedIn() && userExists(request.auth.uid)
+        ? userProfile(request.auth.uid).data.role
         : 'none';
     }
 
     function isStudent() {
-      return currentUserRole() == 'student';
+      return currentRole() in ['student', 'Student', 'STUDENT'];
     }
 
     function isOfficer() {
-      return currentUserRole() == 'dsw_officer';
+      return currentRole() in ['dsw_officer', 'officer', 'DSW Officer', 'Officer', 'OFFICER'];
     }
 
     function isDirector() {
-      return currentUserRole() == 'dsw_director';
+      return currentRole() in ['dsw_director', 'director', 'DSW Director', 'Director', 'DIRECTOR'];
     }
 
     function isStaff() {
@@ -36,64 +38,65 @@ service cloud.firestore {
     }
 
     function currentStudentId() {
-      return signedIn() && currentUserDoc() != null
-        ? currentUserDoc().data.studentId
+      return signedIn() && userExists(request.auth.uid)
+        ? userProfile(request.auth.uid).data.get('studentId', '')
         : '';
     }
 
-    function applicationExists(applicationId) {
-      return exists(/databases/$(database)/documents/applications/$(applicationId));
+    function applicationExists(id) {
+      return exists(/databases/$(database)/documents/applications/$(id));
     }
 
-    function applicationDoc(applicationId) {
-      return get(/databases/$(database)/documents/applications/$(applicationId));
+    function applicationDoc(id) {
+      return get(/databases/$(database)/documents/applications/$(id));
     }
 
-    function complaintExists(complaintId) {
-      return exists(/databases/$(database)/documents/complaints/$(complaintId));
+    function complaintExists(id) {
+      return exists(/databases/$(database)/documents/complaints/$(id));
     }
 
-    function complaintDoc(complaintId) {
-      return get(/databases/$(database)/documents/complaints/$(complaintId));
+    function complaintDoc(id) {
+      return get(/databases/$(database)/documents/complaints/$(id));
     }
 
-    function optionalStringOrNull(value) {
-      return value == null || value is string;
+    function serviceRequestExists(id) {
+      return exists(/databases/$(database)/documents/service_requests/$(id));
     }
 
-    // Some old demo records were created before studentUid was introduced.
-    // Staff may still process those records, but cannot change an existing UID.
-    function sameOptionalStudentUid() {
-      return request.resource.data.get('studentUid', '') ==
-        resource.data.get('studentUid', '');
+    function serviceRequestDoc(id) {
+      return get(/databases/$(database)/documents/service_requests/$(id));
     }
 
     function sameApplicationIdentity() {
       return request.resource.data.studentId == resource.data.studentId &&
-        request.resource.data.type == resource.data.type &&
-        sameOptionalStudentUid();
+        request.resource.data.get('studentUid', '') ==
+          resource.data.get('studentUid', '') &&
+        request.resource.data.type == resource.data.type;
     }
 
-    function validOfficerApplicationTransition() {
-      return (
-        resource.data.status == 'SUBMITTED' &&
-        request.resource.data.status == 'OFFICER_REVIEW'
-      ) || (
-        resource.data.status == 'OFFICER_REVIEW' &&
+    function sameComplaintIdentity() {
+      return request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.get('studentUid', '') ==
+          resource.data.get('studentUid', '');
+    }
+
+    function sameServiceRequestIdentity() {
+      return request.resource.data.studentUid == resource.data.studentUid &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.requestType == resource.data.requestType;
+    }
+
+    function validApplicationOfficerTransition() {
+      return resource.data.status in ['SUBMITTED', 'RESUBMITTED'] &&
         request.resource.data.status in [
           'CORRECTION_REQUIRED',
-          'OFFICER_APPROVED',
-          'REJECTED'
-        ]
-      );
+          'OFFICER_REVIEW_COMPLETE'
+        ];
     }
 
-    function validDirectorApplicationTransition() {
+    function validApplicationDirectorTransition() {
       return (
-        resource.data.status == 'OFFICER_APPROVED' &&
-        request.resource.data.status == 'DIRECTOR_REVIEW'
-      ) || (
-        resource.data.status == 'DIRECTOR_REVIEW' &&
+        resource.data.status == 'OFFICER_REVIEW_COMPLETE' &&
         request.resource.data.status in ['APPROVED', 'REJECTED']
       ) || (
         resource.data.type == 'character_certificate' &&
@@ -102,11 +105,55 @@ service cloud.firestore {
       );
     }
 
+    function validComplaintOfficerTransition() {
+      return resource.data.status in ['SUBMITTED', 'RESUBMITTED'] &&
+        request.resource.data.status in [
+          'CORRECTION_REQUIRED',
+          'OFFICER_REVIEW_COMPLETE'
+        ];
+    }
+
+    function validComplaintDirectorTransition() {
+      return resource.data.status == 'OFFICER_REVIEW_COMPLETE' &&
+        request.resource.data.status == 'RESOLVED';
+    }
+
+    function validServiceOfficerTransition() {
+      return resource.data.status in ['SUBMITTED', 'RESUBMITTED'] &&
+        request.resource.data.status in [
+          'CORRECTION_REQUIRED',
+          'OFFICER_REVIEW_COMPLETE'
+        ];
+    }
+
+    function validServiceDirectorTransition() {
+      return resource.data.status == 'OFFICER_REVIEW_COMPLETE' &&
+        request.resource.data.status in ['APPROVED', 'REJECTED', 'RESOLVED'];
+    }
+
+    // =========================================================
+    // CUET STUDENT REGISTRY
+    // =========================================================
+    match /student_registry/{studentId} {
+      allow get: if signedIn();
+      allow list: if signedIn() && isDirector();
+
+      allow create, update: if signedIn() &&
+        isDirector() &&
+        request.resource.data.studentId == studentId &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.active is bool;
+
+      allow delete: if false;
+    }
+
+    // =========================================================
+    // USERS
+    // =========================================================
     match /users/{userId} {
       allow read: if signedIn() && (
-        request.auth.uid == userId ||
-        isOfficer() ||
-        isDirector()
+        request.auth.uid == userId || isOfficer() || isDirector()
       );
 
       allow create: if signedIn() &&
@@ -114,39 +161,26 @@ service cloud.firestore {
         request.resource.data.uid == userId &&
         request.resource.data.email == request.auth.token.email &&
         request.resource.data.role == 'student' &&
-        request.resource.data.name is string &&
         request.resource.data.studentId is string &&
-        request.resource.data.studentId.size() > 0 &&
-        optionalStringOrNull(request.resource.data.phone) &&
-        optionalStringOrNull(request.resource.data.department) &&
-        optionalStringOrNull(request.resource.data.batch) &&
-        optionalStringOrNull(request.resource.data.hall) &&
-        optionalStringOrNull(request.resource.data.profileImageUrl);
+        request.resource.data.studentId.size() > 0;
 
-      // Students may update only their optional mobile number. Institutional
-      // identity fields remain read-only in the client. A DSW Director may
-      // update only the hall field after approving a hall-transfer request.
       allow update: if signedIn() && (
         (
           request.auth.uid == userId &&
           resource.data.role == 'student' &&
           request.resource.data.role == 'student' &&
-          request.resource.data.get('uid', userId) == resource.data.get('uid', userId) &&
-          request.resource.data.email == resource.data.email &&
           request.resource.data.studentId == resource.data.studentId &&
-          optionalStringOrNull(request.resource.data.phone) &&
+          request.resource.data.email == resource.data.email &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'phone',
             'updatedAt'
           ])
-        ) ||
-        (
+        ) || (
           isDirector() &&
           resource.data.role == 'student' &&
           request.resource.data.role == resource.data.role &&
-          request.resource.data.get('uid', userId) == resource.data.get('uid', userId) &&
-          request.resource.data.email == resource.data.email &&
           request.resource.data.studentId == resource.data.studentId &&
+          request.resource.data.email == resource.data.email &&
           request.resource.data.hall is string &&
           request.resource.data.hall.size() > 0 &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -159,6 +193,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // =========================================================
+    // APPLICATIONS
+    // Student -> all Officers -> Director final decision
+    // =========================================================
     match /applications/{applicationId} {
       allow create: if signedIn() &&
         isStudent() &&
@@ -166,38 +204,33 @@ service cloud.firestore {
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'SUBMITTED' &&
         request.resource.data.documents is list &&
-        (
-          (
-            request.resource.data.type == 'character_certificate' &&
-            request.resource.data.purpose is string &&
-            request.resource.data.description is string
-          ) ||
-          (
-            request.resource.data.type == 'hall_transfer' &&
-            request.resource.data.currentHall is string &&
-            request.resource.data.requestedHall is string &&
-            request.resource.data.reason is string
-          )
-        );
+        request.resource.data.type in [
+          'character_certificate',
+          'hall_transfer'
+        ];
 
       allow read: if signedIn() && (
-        (isStudent() && resource.data.studentId == currentStudentId()) ||
-        isOfficer() ||
-        isDirector()
-      );
-
-      // Students can edit only their own application while responding to an
-      // explicit correction request. The same document/application ID is kept.
-      allow update: if signedIn() && (
         (
           isStudent() &&
-          resource.data.studentId == currentStudentId() &&
+          (
+            resource.data.get('studentUid', '') == request.auth.uid ||
+            (
+              resource.data.get('studentUid', '') == '' &&
+              resource.data.studentId == currentStudentId()
+            )
+          )
+        ) ||
+        isStaff()
+      );
+
+      allow update: if signedIn() && (
+        // Student may only correct and resubmit their own application.
+        (
+          isStudent() &&
           resource.data.get('studentUid', '') == request.auth.uid &&
-          request.resource.data.studentId == resource.data.studentId &&
-          request.resource.data.studentUid == resource.data.studentUid &&
-          request.resource.data.type == resource.data.type &&
+          sameApplicationIdentity() &&
           resource.data.status == 'CORRECTION_REQUIRED' &&
-          request.resource.data.status == 'OFFICER_REVIEW' &&
+          request.resource.data.status == 'RESUBMITTED' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'purpose',
             'description',
@@ -208,21 +241,24 @@ service cloud.firestore {
             'updatedAt'
           ])
         ) ||
+        // Any DSW Officer may review any submitted/resubmitted application.
         (
           isOfficer() &&
           sameApplicationIdentity() &&
-          validOfficerApplicationTransition() &&
+          validApplicationOfficerTransition() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status',
             'updatedAt',
             'currentReviewer',
-            'officerComment'
+            'officerComment',
+            'correctionNote'
           ])
         ) ||
+        // Only the DSW Director may approve/reject/issue a certificate.
         (
           isDirector() &&
           sameApplicationIdentity() &&
-          validDirectorApplicationTransition() &&
+          validApplicationDirectorTransition() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status',
             'updatedAt',
@@ -235,6 +271,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // =========================================================
+    // COMPLAINTS
+    // Student -> all Officers -> Director final resolution
+    // =========================================================
     match /complaints/{complaintId} {
       allow create: if signedIn() &&
         isStudent() &&
@@ -247,63 +287,104 @@ service cloud.firestore {
         request.resource.data.priority is string;
 
       allow read: if signedIn() && (
-        (isStudent() && resource.data.studentId == currentStudentId()) ||
-        isOfficer() ||
-        isDirector()
+        (
+          isStudent() &&
+          (
+            resource.data.get('studentUid', '') == request.auth.uid ||
+            (
+              resource.data.get('studentUid', '') == '' &&
+              resource.data.studentId == currentStudentId()
+            )
+          )
+        ) ||
+        isStaff()
       );
 
       allow update: if signedIn() && (
+        // Student-side AI enrichment while still freshly submitted.
         (
           isStudent() &&
-          resource.data.studentId == currentStudentId() &&
           resource.data.get('studentUid', '') == request.auth.uid &&
-          request.resource.data.studentId == resource.data.studentId &&
-          request.resource.data.studentUid == resource.data.studentUid &&
-          request.resource.data.status == resource.data.status &&
+          sameComplaintIdentity() &&
+          resource.data.status == 'SUBMITTED' &&
           request.resource.data.status == 'SUBMITTED' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'aiSuggestedCategory',
             'aiSuggestedPriority',
             'aiSummary',
             'aiSuggestedDepartment',
+            'aiDuplicateScore',
+            'aiDuplicateComplaintId',
+            'aiDuplicateReason',
+            'aiImageAssessment',
             'updatedAt'
           ])
         ) ||
+        // Student correction/resubmission.
+        (
+          isStudent() &&
+          resource.data.get('studentUid', '') == request.auth.uid &&
+          sameComplaintIdentity() &&
+          resource.data.status == 'CORRECTION_REQUIRED' &&
+          request.resource.data.status == 'RESUBMITTED' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'description',
+            'category',
+            'status',
+            'updatedAt'
+          ])
+        ) ||
+        // Staff may rerun advisory AI without changing workflow status.
+        (
+          isStaff() &&
+          sameComplaintIdentity() &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'aiSuggestedCategory',
+            'aiSuggestedPriority',
+            'aiSummary',
+            'aiSuggestedDepartment',
+            'aiDuplicateScore',
+            'aiDuplicateComplaintId',
+            'aiDuplicateReason',
+            'aiImageAssessment',
+            'updatedAt'
+          ])
+        ) ||
+        // Any Officer may edit review fields before sending to Director.
         (
           isOfficer() &&
-          request.resource.data.studentId == resource.data.studentId &&
-          sameOptionalStudentUid() &&
-          request.resource.data.status in [
-            'SUBMITTED',
-            'OFFICER_REVIEW',
-            'IN_PROGRESS',
-            'RESOLVED',
-            'CLOSED'
-          ] &&
+          sameComplaintIdentity() &&
+          resource.data.status in ['SUBMITTED', 'RESUBMITTED'] &&
+          request.resource.data.status == resource.data.status &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status',
             'category',
             'priority',
             'officerResponse',
             'updatedAt'
           ])
         ) ||
+        // Any Officer may request resubmission or complete review.
         (
-          isDirector() &&
-          request.resource.data.studentId == resource.data.studentId &&
-          sameOptionalStudentUid() &&
-          request.resource.data.status in [
-            'SUBMITTED',
-            'OFFICER_REVIEW',
-            'IN_PROGRESS',
-            'RESOLVED',
-            'CLOSED'
-          ] &&
+          isOfficer() &&
+          sameComplaintIdentity() &&
+          validComplaintOfficerTransition() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status',
-            'category',
-            'priority',
+            'correctionNote',
             'officerResponse',
+            'updatedAt'
+          ])
+        ) ||
+        // Only Director can resolve after Officer review is complete.
+        (
+          isDirector() &&
+          sameComplaintIdentity() &&
+          validComplaintDirectorTransition() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'directorResponse',
             'updatedAt'
           ])
         )
@@ -315,32 +396,218 @@ service cloud.firestore {
         allow read: if signedIn() && complaintExists(complaintId) && (
           (
             isStudent() &&
-            complaintDoc(complaintId).data.studentId == currentStudentId()
+            complaintDoc(complaintId).data.get('studentUid', '') ==
+              request.auth.uid
           ) ||
-          isOfficer() ||
-          isDirector()
+          isStaff()
         );
 
         allow create: if signedIn() &&
           complaintExists(complaintId) &&
-          (
-            isOfficer() ||
-            isDirector() ||
-            (
-              isStudent() &&
-              complaintDoc(complaintId).data.studentId == currentStudentId()
-            )
-          ) &&
           request.resource.data.status in [
             'SUBMITTED',
-            'OFFICER_REVIEW',
-            'IN_PROGRESS',
-            'RESOLVED',
-            'CLOSED'
-          ];
+            'CORRECTION_REQUIRED',
+            'RESUBMITTED',
+            'OFFICER_REVIEW_COMPLETE',
+            'RESOLVED'
+          ] &&
+          request.resource.data.note is string &&
+          request.resource.data.performedBy == request.auth.uid &&
+          (
+            (
+              isStudent() &&
+              complaintDoc(complaintId).data.get('studentUid', '') ==
+                request.auth.uid &&
+              request.resource.data.status in ['SUBMITTED', 'RESUBMITTED']
+            ) ||
+            (
+              isOfficer() &&
+              request.resource.data.status in [
+                'CORRECTION_REQUIRED',
+                'OFFICER_REVIEW_COMPLETE'
+              ]
+            ) ||
+            (
+              isDirector() &&
+              request.resource.data.status == 'RESOLVED'
+            )
+          );
+
+        allow update, delete: if false;
       }
     }
 
+    // =========================================================
+    // UNIFIED DSW SERVICE REQUESTS
+    // Student -> all Officers -> Director final decision
+    // =========================================================
+    match /service_requests/{requestId} {
+      allow create: if signedIn() &&
+        isStudent() &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.studentId == currentStudentId() &&
+        request.resource.data.status == 'SUBMITTED' &&
+        request.resource.data.requestType in [
+          'hall_related',
+          'financial_assistance',
+          'student_welfare',
+          'event_permission',
+          'certificate_recommendation',
+          'general_grievance'
+        ] &&
+        request.resource.data.title is string &&
+        request.resource.data.description is string &&
+        request.resource.data.documents is list;
+
+      allow read: if signedIn() && (
+        (
+          isStudent() &&
+          (
+            resource.data.get('studentUid', '') == request.auth.uid ||
+            (
+              resource.data.get('studentUid', '') == '' &&
+              resource.data.studentId == currentStudentId()
+            )
+          )
+        ) ||
+        isStaff()
+      );
+
+      allow update: if signedIn() && (
+        // Student-side AI enrichment while request remains submitted.
+        (
+          isStudent() &&
+          resource.data.studentUid == request.auth.uid &&
+          sameServiceRequestIdentity() &&
+          resource.data.status == 'SUBMITTED' &&
+          request.resource.data.status == 'SUBMITTED' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'aiSuggestedPriority',
+            'suggestedOffice',
+            'aiSummary',
+            'aiPriorityReason',
+            'aiRiskTags',
+            'aiDuplicateScore',
+            'aiDuplicateRequestId',
+            'aiDuplicateReason',
+            'aiImageAssessment',
+            'updatedAt'
+          ])
+        ) ||
+        // Student correction/resubmission.
+        (
+          isStudent() &&
+          resource.data.studentUid == request.auth.uid &&
+          sameServiceRequestIdentity() &&
+          resource.data.status == 'CORRECTION_REQUIRED' &&
+          request.resource.data.status == 'RESUBMITTED' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'description',
+            'status',
+            'updatedAt'
+          ])
+        ) ||
+        // Any staff member may rerun advisory AI.
+        (
+          isStaff() &&
+          sameServiceRequestIdentity() &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'aiSuggestedPriority',
+            'suggestedOffice',
+            'aiSummary',
+            'aiPriorityReason',
+            'aiRiskTags',
+            'aiDuplicateScore',
+            'aiDuplicateRequestId',
+            'aiDuplicateReason',
+            'aiImageAssessment',
+            'updatedAt'
+          ])
+        ) ||
+        // Any Officer may request resubmission or send the review to Director.
+        (
+          isOfficer() &&
+          sameServiceRequestIdentity() &&
+          validServiceOfficerTransition() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'correctionNote',
+            'officerReviewNote',
+            'updatedAt'
+          ])
+        ) ||
+        // Only Director may make a final decision after Officer review.
+        (
+          isDirector() &&
+          sameServiceRequestIdentity() &&
+          validServiceDirectorTransition() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'resolutionNote',
+            'resolvedAt',
+            'updatedAt'
+          ])
+        )
+      );
+
+      allow delete: if false;
+
+      match /history/{historyId} {
+        allow read: if signedIn() && serviceRequestExists(requestId) && (
+          (
+            isStudent() &&
+            serviceRequestDoc(requestId).data.studentUid == request.auth.uid
+          ) ||
+          isStaff()
+        );
+
+        allow create: if signedIn() &&
+          serviceRequestExists(requestId) &&
+          request.resource.data.status in [
+            'SUBMITTED',
+            'CORRECTION_REQUIRED',
+            'RESUBMITTED',
+            'OFFICER_REVIEW_COMPLETE',
+            'APPROVED',
+            'REJECTED',
+            'RESOLVED'
+          ] &&
+          request.resource.data.action is string &&
+          request.resource.data.note is string &&
+          request.resource.data.performedBy == request.auth.uid &&
+          (
+            (
+              isStudent() &&
+              serviceRequestDoc(requestId).data.studentUid ==
+                request.auth.uid &&
+              request.resource.data.status in ['SUBMITTED', 'RESUBMITTED']
+            ) ||
+            (
+              isOfficer() &&
+              request.resource.data.status in [
+                'CORRECTION_REQUIRED',
+                'OFFICER_REVIEW_COMPLETE'
+              ]
+            ) ||
+            (
+              isDirector() &&
+              request.resource.data.status in [
+                'APPROVED',
+                'REJECTED',
+                'RESOLVED'
+              ]
+            )
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    // =========================================================
+    // NOTIFICATIONS
+    // =========================================================
     match /notifications/{notificationId} {
       allow create: if signedIn() &&
         request.resource.data.userUid is string &&
@@ -355,15 +622,24 @@ service cloud.firestore {
             isStaff() &&
             request.resource.data.type == 'application_status' &&
             applicationExists(request.resource.data.referenceId) &&
-            applicationDoc(request.resource.data.referenceId).data.get('studentUid', '') ==
-              request.resource.data.userUid
+            applicationDoc(request.resource.data.referenceId)
+              .data.get('studentUid', '') ==
+                request.resource.data.userUid
           ) ||
           (
             isStaff() &&
             request.resource.data.type == 'complaint_status' &&
             complaintExists(request.resource.data.referenceId) &&
-            complaintDoc(request.resource.data.referenceId).data.get('studentUid', '') ==
-              request.resource.data.userUid
+            complaintDoc(request.resource.data.referenceId)
+              .data.get('studentUid', '') ==
+                request.resource.data.userUid
+          ) ||
+          (
+            isStaff() &&
+            request.resource.data.type == 'service_request_status' &&
+            serviceRequestExists(request.resource.data.referenceId) &&
+            serviceRequestDoc(request.resource.data.referenceId)
+              .data.studentUid == request.resource.data.userUid
           )
         );
 
@@ -374,22 +650,26 @@ service cloud.firestore {
         request.auth.uid == resource.data.userUid &&
         request.resource.data.userUid == resource.data.userUid &&
         request.resource.data.isRead is bool &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isRead'
+        ]);
 
       allow delete: if false;
     }
 
+    // =========================================================
+    // APPLICATION HISTORY
+    // =========================================================
     match /application_history/{historyId} {
       allow read: if signedIn() &&
         applicationExists(resource.data.applicationId) &&
         (
           (
             isStudent() &&
-            applicationDoc(resource.data.applicationId).data.studentId ==
-              currentStudentId()
+            applicationDoc(resource.data.applicationId)
+              .data.get('studentUid', '') == request.auth.uid
           ) ||
-          isOfficer() ||
-          isDirector()
+          isStaff()
         );
 
       allow create: if signedIn() &&
@@ -401,64 +681,53 @@ service cloud.firestore {
         (
           (
             isStudent() &&
-            applicationDoc(request.resource.data.applicationId).data.studentId ==
-              currentStudentId() &&
-            (
-              (
-                request.resource.data.action == 'SUBMITTED' &&
-                applicationDoc(request.resource.data.applicationId).data.status ==
-                  'SUBMITTED'
-              ) ||
-              (
-                request.resource.data.action == 'STUDENT_RESUBMITTED' &&
-                applicationDoc(request.resource.data.applicationId).data.status ==
-                  'OFFICER_REVIEW'
-              )
-            )
+            applicationDoc(request.resource.data.applicationId)
+              .data.get('studentUid', '') == request.auth.uid &&
+            request.resource.data.action in [
+              'SUBMITTED',
+              'STUDENT_RESUBMITTED'
+            ]
           ) ||
           (
             isOfficer() &&
             request.resource.data.action in [
-              'OFFICER_REVIEW',
               'CORRECTION_REQUIRED',
-              'OFFICER_APPROVED',
-              'REJECTED'
-            ] &&
-            applicationDoc(request.resource.data.applicationId).data.status ==
-              request.resource.data.action
+              'OFFICER_REVIEW_COMPLETE'
+            ]
           ) ||
           (
             isDirector() &&
             request.resource.data.action in [
-              'DIRECTOR_REVIEW',
               'APPROVED',
               'REJECTED',
               'CERTIFICATE_ISSUED'
-            ] &&
-            applicationDoc(request.resource.data.applicationId).data.status ==
-              request.resource.data.action
+            ]
           )
         );
 
-      allow update: if false;
-      allow delete: if false;
+      allow update, delete: if false;
     }
 
+    // =========================================================
+    // AUDIT LOGS
+    // =========================================================
     match /audit_logs/{logId} {
       allow read: if signedIn() && isStaff();
 
       allow create: if signedIn() &&
         isStaff() &&
         request.resource.data.actorId == request.auth.uid &&
-        request.resource.data.actorRole in ['dsw_officer', 'dsw_director'] &&
+        request.resource.data.actorRole in [
+          'dsw_officer',
+          'dsw_director'
+        ] &&
         request.resource.data.action is string &&
         request.resource.data.targetType is string &&
         request.resource.data.targetId is string &&
         request.resource.data.timestamp is timestamp &&
         request.resource.data.details is map;
 
-      allow update: if false;
-      allow delete: if false;
+      allow update, delete: if false;
     }
   }
 }

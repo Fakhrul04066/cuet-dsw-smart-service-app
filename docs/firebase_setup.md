@@ -1,51 +1,21 @@
 # Firebase Setup
 
-## 1. Create project
+Enable these products in the same Firebase project:
 
-1. Create a Firebase project in the Firebase Console.
-2. Register an Android app and optionally a web app.
-3. Download the client config files for Flutter when needed.
-4. Enable Firebase Authentication.
-5. Enable Cloud Firestore.
-6. Optionally enable Firebase Cloud Functions for secure backend operations.
+1. Firebase Authentication (Email/Password)
+2. Cloud Firestore
+3. Firebase Storage
+4. Firebase App Check
+5. Firebase AI Logic / Gemini
 
-## 2. Authentication
+Deploy rules and indexes from the repository:
 
-Enable the following, depending on your implementation:
+```bash
+firebase deploy --only firestore:rules,firestore:indexes,storage
+```
 
-- Email/password authentication for prototype testing and local demo use
-- Custom user records in Firestore with role values such as `student`, `official`, and `admin`
+Create student registry records through a trusted administrator process. Student self-registration is limited to the student role.
 
-## 3. Firestore
+Create DSW staff users through a trusted process and set `/users/{uid}.role` to `dsw_officer` or `dsw_director`.
 
-Create the collections listed in the Firestore schema document:
-
-- users
-- characterCertificates
-- hallTransfers
-- complaints
-- notifications
-- auditLogs
-
-## 4. Backend operations
-
-Use Firebase Cloud Functions for:
-
-- signed Cloudinary uploads
-- Gemini API calls
-- validation and secret management
-- notification generation when needed
-
-## 5. Secrets
-
-Do not store keys in:
-
-- Flutter source files
-- tracked Git files
-- public configuration
-
-Keep private values in Firebase environment config or a secure backend secret store.
-
-## 6. Local development
-
-For local development, use a secure environment configuration and keep all secrets out of version control.
+For Android release builds, register App Check with Play Integrity. For a production Flutter web staff dashboard, configure a web App Check provider/site key before enabling enforcement.

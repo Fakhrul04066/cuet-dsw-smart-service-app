@@ -9,84 +9,54 @@ import '../models/user_model.dart';
 import 'application_history_service.dart';
 import 'application_service.dart';
 import 'audit_log_service.dart';
-import 'user_service.dart';
 import 'notification_service.dart';
+import 'user_service.dart';
 
 class HallTransferStatus {
   static const String submitted = 'SUBMITTED';
-  static const String officerReview = 'OFFICER_REVIEW';
   static const String correctionRequired = 'CORRECTION_REQUIRED';
-  static const String officerApproved = 'OFFICER_APPROVED';
-  static const String directorReview = 'DIRECTOR_REVIEW';
+  static const String resubmitted = 'RESUBMITTED';
+  static const String officerReviewComplete = 'OFFICER_REVIEW_COMPLETE';
   static const String approved = 'APPROVED';
   static const String rejected = 'REJECTED';
 
-  static String timelineLabel(String status) {
-    switch (status) {
-      case submitted:
-        return 'Submitted';
-      case officerReview:
-        return 'Officer Processing';
-      case correctionRequired:
-        return 'Correction Required';
-      case officerApproved:
-        return 'Officer Approved';
-      case directorReview:
-        return 'Director Processing';
-      case approved:
-        return 'Approved';
-      case rejected:
-        return 'Rejected';
-      default:
-        return status;
-    }
-  }
+  static String timelineLabel(String status) => switch (status) {
+        submitted => 'Submitted for Officer Review',
+        correctionRequired => 'Resubmission Required',
+        resubmitted => 'Resubmitted for Officer Review',
+        officerReviewComplete => 'Sent to DSW Director',
+        approved => 'Approved by Director',
+        rejected => 'Rejected by Director',
+        _ => status,
+      };
 
   static List<String> timeline(String status) {
-    const steps = [
-      submitted,
-      officerReview,
-      correctionRequired,
-      officerApproved,
-      directorReview,
-      approved,
-    ];
-    final currentIndex = steps.indexOf(status);
-    return currentIndex < 0 ? steps : steps.sublist(0, currentIndex + 1);
+    if (status == correctionRequired) {
+      return [submitted, correctionRequired];
+    }
+    if (status == resubmitted) {
+      return [submitted, correctionRequired, resubmitted];
+    }
+    if (status == officerReviewComplete) {
+      return [submitted, officerReviewComplete];
+    }
+    if (status == approved) {
+      return [submitted, officerReviewComplete, approved];
+    }
+    if (status == rejected) {
+      return [submitted, officerReviewComplete, rejected];
+    }
+    return [submitted];
   }
 }
 
 class HallTransferService {
   HallTransferService._();
-
   static final HallTransferService instance = HallTransferService._();
 
   static const String applicationType = 'hall_transfer';
 
   final ApplicationService _applicationService = ApplicationService.instance;
-
-  static const Map<String, Set<String>> _validTransitions = {
-    HallTransferStatus.submitted: {
-      HallTransferStatus.officerReview,
-    },
-    HallTransferStatus.officerReview: {
-      HallTransferStatus.correctionRequired,
-      HallTransferStatus.officerApproved,
-      HallTransferStatus.rejected,
-    },
-    HallTransferStatus.correctionRequired: {
-      HallTransferStatus.officerReview,
-    },
-    HallTransferStatus.officerApproved: {
-      HallTransferStatus.directorReview,
-    },
-    HallTransferStatus.directorReview: {
-      HallTransferStatus.approved,
-      HallTransferStatus.rejected,
-    },
-    HallTransferStatus.approved: <String>{},
-    HallTransferStatus.rejected: <String>{},
-  };
 
   Future<Application> submitHallTransfer({
     required String currentHall,
@@ -96,10 +66,7 @@ class HallTransferService {
     List<Map<String, dynamic>> documents = const [],
   }) async {
     final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) {
-      throw StateError('No authenticated student found.');
-    }
-
+    if (actor == null) throw StateError('No authenticated student found.');
     final profile = await UserService.instance.getUserById(actor.uid);
     if (profile == null ||
         StudentUser.normalizeRole(profile.role) != 'student') {
@@ -119,109 +86,87 @@ class HallTransferService {
       reason: reason,
       documents: documents,
     );
-    final id = await _applicationService.createApplication(application);
-    final saved = application.copyWith(id: id);
 
+    final id = await _applicationService.createApplication(application);
     await _recordHistory(
       applicationId: id,
       action: HallTransferStatus.submitted,
       performedBy: actor.uid,
-      comment: 'Student submitted the hall transfer request.',
+      comment: 'Student submitted the hall transfer request for Officer review.',
     );
     await NotificationService.instance.createNotification(
       userUid: actor.uid,
       title: 'Application submitted',
-      message: 'Your hall transfer application was submitted.',
+      message: 'Your hall transfer request is now visible to DSW Officers.',
       type: 'application_submitted',
       referenceId: id,
     );
-    return saved;
+    return application.copyWith(id: id);
   }
 
   Future<List<Application>> getOfficerQueue() async {
-    final applications = <Application>[];
-    for (final status in [
-      HallTransferStatus.submitted,
-      HallTransferStatus.officerReview,
-      HallTransferStatus.correctionRequired,
-    ]) {
-      final items = await _applicationService.getApplicationsByStatus(status);
-      applications.addAll(items.where((item) => item.type == applicationType));
-    }
-    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return applications;
+    await _requireRole('dsw_officer');
+    final all = await _applicationService.getAllApplications();
+    return all.where((item) => item.type == applicationType).toList();
   }
 
   Future<List<Application>> getDirectorQueue() async {
-    final applications = <Application>[];
-    for (final status in [
-      HallTransferStatus.officerApproved,
-      HallTransferStatus.directorReview,
-    ]) {
-      final items = await _applicationService.getApplicationsByStatus(status);
-      applications.addAll(items.where((item) => item.type == applicationType));
-    }
-    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return applications;
-  }
-
-  Future<Application> reviewForOfficer(String applicationId) async {
-    final actor = await _staff('dsw_officer');
-    final application = await _get(applicationId);
-    if (application.status != HallTransferStatus.submitted) {
-      return application;
-    }
-    return _changeStatus(
-      application,
-      HallTransferStatus.officerReview,
-      'Officer started processing the hall transfer request.',
-      'review',
-      actor: actor,
-      actorRole: 'dsw_officer',
-    );
+    await _requireRole('dsw_director');
+    final all = await _applicationService.getAllApplications();
+    return all.where((item) => item.type == applicationType).toList();
   }
 
   Future<Application> officerDecision({
     required String applicationId,
     required String decision,
-    String? comment,
+    required String comment,
   }) async {
-    if ((decision == 'request_correction' || decision == 'reject' || decision == 'approve') &&
-        (comment == null || comment.trim().isEmpty)) {
-      throw StateError('An official note is required for this officer decision.');
-    }
-    final actor = await _staff('dsw_officer');
+    final officer = await _requireRole('dsw_officer');
     final application = await _get(applicationId);
-    final nextStatus = switch (decision) {
-      'request_correction' => HallTransferStatus.correctionRequired,
-      'approve' => HallTransferStatus.officerApproved,
-      'reject' => HallTransferStatus.rejected,
-      _ => throw StateError('Unsupported officer decision.'),
-    };
-    _ensureTransition(application.status, nextStatus, 'DSW Officer');
-    return _changeStatus(
-      application,
-      nextStatus,
-      comment ?? 'Officer updated the hall transfer request.',
-      'officer_$decision',
-      actor: actor,
-      actorRole: 'dsw_officer',
-    );
-  }
 
-  Future<Application> reviewForDirector(String applicationId) async {
-    final actor = await _staff('dsw_director');
-    final application = await _get(applicationId);
-    if (application.status != HallTransferStatus.officerApproved) {
-      return application;
+    final next = switch (decision) {
+      'request_correction' => HallTransferStatus.correctionRequired,
+      'complete_review' => HallTransferStatus.officerReviewComplete,
+      _ => throw StateError('Unsupported officer action.'),
+    };
+
+    if (application.status == next) return application;
+
+    _ensureStatus(application, [
+      HallTransferStatus.submitted,
+      HallTransferStatus.resubmitted,
+    ]);
+    if (comment.trim().isEmpty) {
+      throw StateError('A review note is required.');
     }
-    return _changeStatus(
-      application,
-      HallTransferStatus.directorReview,
-      'Director started processing the hall transfer request.',
-      'review',
-      actor: actor,
-      actorRole: 'dsw_director',
+
+    await _applicationService.updateWorkflowStatus(
+      applicationId,
+      status: next,
+      currentReviewer: officer.uid,
+      officerComment:
+          decision == 'complete_review' ? comment.trim() : null,
+      correctionNote:
+          decision == 'request_correction' ? comment.trim() : null,
+    );
+    await _afterStaffTransition(
+      application: application,
+      actor: officer,
+      actorRole: 'dsw_officer',
+      status: next,
+      action: 'hall_transfer_officer_$decision',
+      comment: comment.trim(),
+    );
+    return application.copyWith(
+      status: next,
+      currentReviewer: officer.uid,
+      officerComment: decision == 'complete_review'
+          ? comment.trim()
+          : application.officerComment,
+      correctionNote: decision == 'request_correction'
+          ? comment.trim()
+          : application.correctionNote,
+      updatedAt: DateTime.now(),
     );
   }
 
@@ -230,36 +175,57 @@ class HallTransferService {
     required String decision,
     String? comment,
   }) async {
-    if ((decision == 'approve' || decision == 'reject') &&
-        (comment == null || comment.trim().isEmpty)) {
-      throw StateError('An official note is required for this director decision.');
-    }
-    final actor = await _staff('dsw_director');
+    final director = await _requireRole('dsw_director');
     final application = await _get(applicationId);
-    final nextStatus = switch (decision) {
+
+    final next = switch (decision) {
       'approve' => HallTransferStatus.approved,
       'reject' => HallTransferStatus.rejected,
-      _ => throw StateError('Unsupported director decision.'),
+      _ => throw StateError('Unsupported Director decision.'),
     };
-    _ensureTransition(application.status, nextStatus, 'DSW Director');
-    final updated = await _changeStatus(
-      application,
-      nextStatus,
-      comment ?? 'Director updated the hall transfer request.',
-      'director_$decision',
-      actor: actor,
+
+    if (application.status == next) return application;
+
+    _ensureStatus(application, [HallTransferStatus.officerReviewComplete]);
+    if ((comment ?? '').trim().isEmpty) {
+      throw StateError('An official Director note is required.');
+    }
+
+    await _applicationService.updateWorkflowStatus(
+      applicationId,
+      status: next,
+      currentReviewer: director.uid,
+      directorComment: comment!.trim(),
+    );
+    await _afterStaffTransition(
+      application: application,
+      actor: director,
       actorRole: 'dsw_director',
+      status: next,
+      action: 'hall_transfer_director_$decision',
+      comment: comment.trim(),
     );
 
     if (decision == 'approve') {
-      await UserService.instance.updateStudentHallAfterApprovedTransfer(
-        studentUid: application.studentUid,
-        studentId: application.studentId,
-        hall: application.requestedHall ?? '',
-      );
+      try {
+        await UserService.instance.updateStudentHallAfterApprovedTransfer(
+          studentUid: application.studentUid,
+          studentId: application.studentId,
+          hall: application.requestedHall ?? '',
+        );
+      } catch (error) {
+        // The Director decision has already been stored. Do not report the
+        // whole approval as failed because a secondary profile sync failed.
+        developer.log('HALL_TRANSFER_PROFILE_SYNC_FAILED: $error');
+      }
     }
 
-    return updated;
+    return application.copyWith(
+      status: next,
+      currentReviewer: director.uid,
+      directorComment: comment.trim(),
+      updatedAt: DateTime.now(),
+    );
   }
 
   Future<Application> _get(String id) async {
@@ -270,125 +236,66 @@ class HallTransferService {
     return application;
   }
 
-  Future<UserIdentity> _staff(String expectedRole) async {
+  Future<StudentUser> _requireRole(String expectedRole) async {
     final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) throw StateError('No authenticated staff user found.');
+    if (actor == null) throw StateError('No authenticated user found.');
     final profile = await UserService.instance.getUserById(actor.uid);
     if (profile == null ||
         StudentUser.normalizeRole(profile.role) != expectedRole) {
       throw StateError('This account is not authorized for this action.');
     }
-    return UserIdentity(actor.uid);
+    return profile;
   }
 
-  Future<Application> _changeStatus(
-    Application application,
-    String status,
-    String comment,
-    String auditAction, {
-    UserIdentity? actor,
-    String? actorRole,
+  void _ensureStatus(Application application, List<String> allowed) {
+    if (!allowed.contains(application.status)) {
+      throw StateError(
+        'Action is not allowed while status is ${application.status}.',
+      );
+    }
+  }
+
+  Future<void> _afterStaffTransition({
+    required Application application,
+    required StudentUser actor,
+    required String actorRole,
+    required String status,
+    required String action,
+    required String comment,
   }) async {
-    developer.log(
-      'CHANGE_STATUS_START: applicationId=${application.id}, toStatus=$status, actorRole=$actorRole',
-    );
-
-    var updated = application.copyWith(
-      status: status,
-      updatedAt: DateTime.now(),
-    );
-    final isDecision = auditAction != 'review';
-    if (isDecision && actorRole == 'dsw_officer') {
-      updated = updated.copyWith(officerComment: comment);
-    } else if (isDecision && actorRole == 'dsw_director') {
-      updated = updated.copyWith(directorComment: comment);
-    }
-
     try {
-      developer.log(
-        'CHANGE_STATUS_APPLICATION_UPDATE_START: applicationId=${application.id}',
-      );
-      await _applicationService.updateWorkflowStatus(
-        application.id,
-        status: status,
-        officerComment: isDecision && actorRole == 'dsw_officer'
-            ? comment
-            : null,
-        directorComment: isDecision && actorRole == 'dsw_director'
-            ? comment
-            : null,
-      );
-      developer.log(
-        'CHANGE_STATUS_APPLICATION_UPDATE_OK: applicationId=${application.id}',
-      );
-    } catch (e) {
-      developer.log(
-        'CHANGE_STATUS_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e',
-      );
-      rethrow;
-    }
-
-    final actorId =
-        actor?.uid ?? FirebaseAuth.instance.currentUser?.uid ?? 'system';
-
-    try {
-      developer.log(
-        'CHANGE_STATUS_HISTORY_WRITE_START: applicationId=${application.id}',
-      );
       await _recordHistory(
         applicationId: application.id,
         action: status,
-        performedBy: actorId,
+        performedBy: actor.uid,
         comment: comment,
       );
-      developer.log(
-        'CHANGE_STATUS_HISTORY_WRITE_OK: applicationId=${application.id}',
-      );
-    } catch (e) {
-      developer.log('CHANGE_STATUS_HISTORY_WRITE_FAILED: ${e.runtimeType} $e');
-      rethrow;
+    } catch (error) {
+      developer.log('HALL_TRANSFER_HISTORY_FAILED: $error');
     }
-
     try {
-      if (actor != null && actorRole != null) {
-        developer.log(
-          'CHANGE_STATUS_AUDIT_WRITE_START: applicationId=${application.id}',
-        );
-        await AuditLogService.instance.addAuditLog(
-          AuditLog(
-            id: '',
-            actorId: actor.uid,
-            actorRole: actorRole,
-            action: 'hall_transfer_$auditAction',
-            targetType: 'application',
-            targetId: application.id,
-            timestamp: DateTime.now(),
-            details: {
-              'applicationId': application.id,
-              'fromStatus': application.status,
-              'toStatus': status,
-              'comment': comment,
-            },
-          ),
-        );
-        developer.log(
-          'CHANGE_STATUS_AUDIT_WRITE_OK: applicationId=${application.id}',
-        );
-      }
-    } catch (e) {
-      developer.log('CHANGE_STATUS_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
-      rethrow;
+      await AuditLogService.instance.addAuditLog(
+        AuditLog(
+          id: '',
+          actorId: actor.uid,
+          actorRole: actorRole,
+          action: action,
+          targetType: 'application',
+          targetId: application.id,
+          timestamp: DateTime.now(),
+          details: {
+            'fromStatus': application.status,
+            'toStatus': status,
+            'comment': comment,
+          },
+        ),
+      );
+    } catch (error) {
+      developer.log('HALL_TRANSFER_AUDIT_FAILED: $error');
     }
 
-    if (application.studentUid.isEmpty) {
-      developer.log(
-        'CHANGE_STATUS_NOTIFICATION_SKIPPED: legacy application has no studentUid',
-      );
-    } else {
+    if (application.studentUid.isNotEmpty) {
       try {
-        developer.log(
-          'CHANGE_STATUS_NOTIFICATION_WRITE_START: studentUid=${application.studentUid}',
-        );
         await NotificationService.instance.createNotification(
           userUid: application.studentUid,
           title: 'Application status updated',
@@ -396,20 +303,10 @@ class HallTransferService {
           type: 'application_status',
           referenceId: application.id,
         );
-        developer.log(
-          'CHANGE_STATUS_NOTIFICATION_WRITE_OK: studentUid=${application.studentUid}',
-        );
       } catch (error) {
-        // Notification delivery is secondary to the authoritative application,
-        // history, and audit writes above.
-        developer.log(
-          'CHANGE_STATUS_NOTIFICATION_WRITE_FAILED: ${error.runtimeType} $error',
-        );
+        developer.log('HALL_TRANSFER_NOTIFICATION_FAILED: $error');
       }
     }
-
-    developer.log('CHANGE_STATUS_OK: applicationId=${application.id}');
-    return updated;
   }
 
   Future<void> _recordHistory({
@@ -417,28 +314,15 @@ class HallTransferService {
     required String action,
     required String performedBy,
     required String comment,
-  }) async {
-    await ApplicationHistoryService.instance.addHistoryEntry(
-      ApplicationHistory(
-        id: '',
-        applicationId: applicationId,
-        action: action,
-        performedBy: performedBy,
-        comment: comment,
-        timestamp: DateTime.now(),
-      ),
-    );
-  }
-
-  void _ensureTransition(String from, String to, String role) {
-    if (!(_validTransitions[from]?.contains(to) ?? false)) {
-      throw StateError('$role cannot move from $from to $to.');
-    }
-  }
-}
-
-class UserIdentity {
-  final String uid;
-
-  const UserIdentity(this.uid);
+  }) =>
+      ApplicationHistoryService.instance.addHistoryEntry(
+        ApplicationHistory(
+          id: '',
+          applicationId: applicationId,
+          action: action,
+          performedBy: performedBy,
+          comment: comment,
+          timestamp: DateTime.now(),
+        ),
+      );
 }

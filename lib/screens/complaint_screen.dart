@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/complaint.dart';
@@ -12,6 +12,7 @@ import '../widgets/status_chip.dart';
 
 class ComplaintScreen extends StatefulWidget {
   const ComplaintScreen({super.key});
+
   @override
   State<ComplaintScreen> createState() => _ComplaintScreenState();
 }
@@ -28,14 +29,6 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
   double _uploadProgress = 0;
   late final String _complaintId;
   final _uploadedAttachments = <Map<String, dynamic>>[];
-  final _categories = const [
-    'Hall Facilities',
-    'Academic',
-    'Student Welfare',
-    'Harassment / Safety',
-    'Administrative',
-    'Other',
-  ];
 
   @override
   void initState() {
@@ -59,10 +52,10 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
     }
     setState(() => _saving = true);
     final now = DateTime.now();
-    final id = _complaintId;
     final complaint = Complaint(
-      id: id,
-      trackingNumber: 'CMP-${now.year}-${id.substring(id.length - 6)}',
+      id: _complaintId,
+      trackingNumber:
+          'CMP-${now.year}-${_complaintId.substring(_complaintId.length - 6)}',
       studentId: profile.studentId,
       studentUid: profile.uid,
       title: _title.text.trim(),
@@ -75,32 +68,25 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
       isConfidential: _confidential,
       attachments: _uploadedAttachments,
     );
+
     try {
       await ComplaintServiceData.instance.createComplaint(complaint);
       if (!mounted) return;
       _title.clear();
       _description.clear();
-      setState(() => _saving = false);
       _message(
         'Complaint submitted. Tracking number: ${complaint.trackingNumber}',
       );
     } catch (error) {
-      if (mounted) {
-        setState(() => _saving = false);
-        _message('Could not submit complaint: $error');
-      }
+      if (mounted) _message('Could not submit complaint: $error');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _pickAttachments() async {
     if (!FirebaseStorageService.uploadsEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File upload is not available in this demo version.'),
-          ),
-        );
-      }
+      _message('File upload is disabled for this build configuration.');
       return;
     }
     setState(() {
@@ -110,133 +96,136 @@ class _ComplaintScreenState extends State<ComplaintScreen> {
     try {
       final files = await FirebaseStorageService.instance.pickAndUpload(
         folder: 'complaints/$_complaintId/attachments',
-        onProgress: (progress) => setState(() => _uploadProgress = progress),
+        onProgress: (progress) {
+          if (mounted) setState(() => _uploadProgress = progress);
+        },
       );
-      _uploadedAttachments.addAll(files);
+      if (mounted) setState(() => _uploadedAttachments.addAll(files));
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
+      if (mounted) _message(error.toString());
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  void _message(String text) => showDialog<void>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('Complaint'),
-      content: Text(text),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('OK'),
-        ),
-      ],
-    ),
-  );
+  void _message(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Student Complaint')),
-    body: FutureBuilder<StudentUser?>(
-      future: _profile,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Could not load your profile: ${snapshot.error}'));
-        }
-        final profile = snapshot.data;
-        if (profile == null) {
-          return const Center(child: Text('Student profile not found.'));
-        }
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Submit a complaint to DSW',
-                  style: Theme.of(context).textTheme.titleMedium,
+        appBar: AppBar(title: const Text('Student Complaint')),
+        body: FutureBuilder<StudentUser?>(
+          future: _profile,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text('Could not load your profile: ${snapshot.error}'),
+              );
+            }
+            final profile = snapshot.data;
+            if (profile == null) {
+              return const Center(child: Text('Student profile not found.'));
+            }
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Submit a complaint to DSW',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'All DSW Officers can review your complaint. Only the DSW Director can make the final complaint decision.',
+                    ),
+                    const SizedBox(height: 20),
+                    DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Complaint Category',
+                      ),
+                      items: Complaint.categories
+                          .map(
+                            (item) => DropdownMenuItem(
+                              value: item,
+                              child: Text(item),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _category = value ?? _category),
+                    ),
+                    const SizedBox(height: 16),
+                    CustomTextField(
+                      controller: _title,
+                      labelText: 'Complaint Title',
+                      prefixIcon: Icons.title_rounded,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                              ? 'Please enter a complaint title'
+                              : null,
+                    ),
+                    const SizedBox(height: 16),
+                    CustomTextField(
+                      controller: _description,
+                      labelText: 'Detailed Description',
+                      prefixIcon: Icons.description_outlined,
+                      maxLines: 6,
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                              ? 'Please describe the complaint'
+                              : null,
+                    ),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _confidential,
+                      onChanged: (value) =>
+                          setState(() => _confidential = value ?? false),
+                      title: const Text('Mark as confidential complaint'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _isUploading ? null : _pickAttachments,
+                      icon: _isUploading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cloud_upload_outlined),
+                      label: Text(
+                        _isUploading
+                            ? 'Uploading ${(_uploadProgress * 100).round()}%'
+                            : 'Add images or documents',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _saving ? null : () => _submit(profile),
+                        child: Text(
+                          _saving ? 'Submitting...' : 'Submit Complaint',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(
-                    labelText: 'Complaint Category',
-                  ),
-                  items: _categories
-                      .map(
-                        (item) =>
-                            DropdownMenuItem(value: item, child: Text(item)),
-                      )
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => _category = value ?? _category),
-                ),
-                const SizedBox(height: 16),
-                CustomTextField(
-                  controller: _title,
-                  labelText: 'Complaint Title',
-                  prefixIcon: Icons.title_rounded,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please enter a complaint title'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                CustomTextField(
-                  controller: _description,
-                  labelText: 'Detailed Description',
-                  prefixIcon: Icons.description_outlined,
-                  maxLines: 6,
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Please describe the complaint'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _confidential,
-                  onChanged: (value) =>
-                      setState(() => _confidential = value ?? false),
-                  title: const Text('Mark as confidential complaint'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _isUploading ? null : _pickAttachments,
-                  icon: _isUploading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.cloud_upload_outlined),
-                  label: Text(
-                    _isUploading
-                        ? 'Uploading ${(_uploadProgress * 100).round()}%'
-                        : 'Add images or documents',
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _saving ? null : () => _submit(profile),
-                    child: Text(_saving ? 'Submitting...' : 'Submit Complaint'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
-  );
+              ),
+            );
+          },
+        ),
+      );
 }
 
 class ComplaintHistoryScreen extends StatelessWidget {
@@ -244,69 +233,71 @@ class ComplaintHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('My Complaints')),
-    body: FutureBuilder<StudentUser?>(
-      future: UserService.instance.getCurrentUserProfile(),
-      builder: (context, profileSnapshot) {
-        if (profileSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (profileSnapshot.hasError) {
-          return Center(
-            child: Text('Could not load your profile: ${profileSnapshot.error}'),
-          );
-        }
-        final profile = profileSnapshot.data;
-        if (profile == null || profile.studentId.trim().isEmpty) {
-          return const Center(child: Text('Student profile not found.'));
-        }
-        return StreamBuilder<List<Complaint>>(
-          stream: ComplaintServiceData.instance.streamComplaintsForStudent(
-            profile.studentId,
-          ),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              String errorMessage = 'Could not load your complaints';
-              if (snapshot.error is FirebaseException) {
-                final e = snapshot.error as FirebaseException;
-                errorMessage = 'Firebase Error [${e.code}]: ${e.message}';
-              } else {
-                errorMessage = 'Error: ${snapshot.error}';
-              }
-              return Center(child: Text(errorMessage));
-            }
-            if (!snapshot.hasData) {
+        appBar: AppBar(title: const Text('My Complaints')),
+        body: FutureBuilder<StudentUser?>(
+          future: UserService.instance.getCurrentUserProfile(),
+          builder: (context, profileSnapshot) {
+            if (profileSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (snapshot.data!.isEmpty) {
-              return const Center(child: Text('No complaints submitted yet.'));
+            if (profileSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Could not load your profile: ${profileSnapshot.error}',
+                ),
+              );
             }
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: snapshot.data!
-                  .map(
-                    (item) => Card(
-                      child: ListTile(
-                        title: Text(item.title),
-                        subtitle: Text(item.trackingNumber),
-                        trailing: StatusChip(label: item.status),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ComplaintDetailsScreen(complaint: item),
+            final profile = profileSnapshot.data;
+            if (profile == null || profile.studentId.trim().isEmpty) {
+              return const Center(child: Text('Student profile not found.'));
+            }
+
+            return StreamBuilder<List<Complaint>>(
+              stream: ComplaintServiceData.instance
+                  .streamComplaintsForStudent(profile.uid),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  String errorMessage = 'Could not load your complaints';
+                  if (snapshot.error is FirebaseException) {
+                    final e = snapshot.error as FirebaseException;
+                    errorMessage = 'Firebase Error [${e.code}]: ${e.message}';
+                  }
+                  return Center(child: Text(errorMessage));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.data!.isEmpty) {
+                  return const Center(
+                    child: Text('No complaints submitted yet.'),
+                  );
+                }
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: snapshot.data!
+                      .map(
+                        (item) => Card(
+                          child: ListTile(
+                            title: Text(item.title),
+                            subtitle: Text(item.trackingNumber),
+                            trailing: StatusChip(label: item.status),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ComplaintDetailsScreen(complaint: item),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  )
-                  .toList(),
+                      )
+                      .toList(),
+                );
+              },
             );
           },
-        );
-      },
-    ),
-  );
+        ),
+      );
 }
 
 class ComplaintDetailsScreen extends StatelessWidget {
@@ -314,80 +305,204 @@ class ComplaintDetailsScreen extends StatelessWidget {
   const ComplaintDetailsScreen({super.key, required this.complaint});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(complaint.trackingNumber)),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                complaint.title,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
+  Widget build(BuildContext context) => StreamBuilder<Complaint?>(
+        stream: ComplaintServiceData.instance.streamComplaintById(complaint.id),
+        builder: (context, snapshot) {
+          final current = snapshot.data ?? complaint;
+          return Scaffold(
+            appBar: AppBar(title: Text(current.trackingNumber)),
+            body: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        current.title,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                    StatusChip(label: current.status),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(current.description),
+                const SizedBox(height: 16),
+                Text('Category: ${current.category}'),
+                Text('Priority: ${current.priority}'),
+                const Text('Officer queue: Visible to all DSW Officers'),
+                if ((current.correctionNote ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Correction requested',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(current.correctionNote!),
+                ],
+                if ((current.officerResponse ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Officer review',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(current.officerResponse!),
+                ],
+                if ((current.directorResponse ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Director decision',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(current.directorResponse!),
+                ],
+                if (current.status == 'CORRECTION_REQUIRED') ...[
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: () => _showResubmitDialog(context, current),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Correct and Resubmit'),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Text(
+                  'Attachments',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                if (current.attachments.isEmpty)
+                  const Text('No attachments.')
+                else
+                  ...current.attachments.map(
+                    (attachment) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.attach_file),
+                      title: Text(
+                        (attachment['fileName'] ??
+                                attachment['name'] ??
+                                'Attachment')
+                            .toString(),
+                      ),
+                      trailing: attachment['url'] is String
+                          ? IconButton(
+                              tooltip: 'Open attachment',
+                              icon: const Icon(Icons.open_in_new),
+                              onPressed: () => launchUrl(
+                                Uri.parse(attachment['url'] as String),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: ComplaintServiceData.instance
+                      .getStatusHistory(current.id),
+                  builder: (context, historySnapshot) => ExpansionTile(
+                    title: const Text('Status history'),
+                    children: (historySnapshot.data ??
+                            const <Map<String, dynamic>>[])
+                        .map(
+                          (item) => ListTile(
+                            title: Text(item['status']?.toString() ?? ''),
+                            subtitle: Text(item['note']?.toString() ?? ''),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
             ),
-            StatusChip(label: complaint.status),
+          );
+        },
+      );
+
+  Future<void> _showResubmitDialog(
+    BuildContext context,
+    Complaint current,
+  ) async {
+    final title = TextEditingController(text: current.title);
+    final description = TextEditingController(text: current.description);
+    var category = current.category;
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Correct and resubmit complaint'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: Complaint.categories.contains(category)
+                      ? category
+                      : 'Other',
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Category'),
+                  items: Complaint.categories
+                      .map((item) =>
+                          DropdownMenuItem(value: item, child: Text(item)))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => category = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(labelText: 'Title'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: description,
+                  minLines: 4,
+                  maxLines: 7,
+                  decoration: const InputDecoration(
+                    labelText: 'Corrected description',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Resubmit'),
+            ),
           ],
         ),
-        const SizedBox(height: 20),
-        Text(complaint.description),
-        const SizedBox(height: 16),
-        Text('Category: ${complaint.category}'),
-        Text('Priority: ${complaint.priority}'),
-        const SizedBox(height: 20),
-        Text(
-          'Officer response',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          complaint.officerResponse?.isNotEmpty == true
-              ? complaint.officerResponse!
-              : 'No response yet.',
-        ),
-        const SizedBox(height: 20),
-        Text('Attachments', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        if (complaint.attachments.isEmpty)
-          const Text('No attachments.')
-        else
-          ...complaint.attachments.map(
-            (attachment) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.attach_file),
-              title: Text(
-                (attachment['fileName'] ?? attachment['name'] ?? 'Attachment')
-                    .toString(),
-              ),
-              trailing: attachment['url'] is String
-                  ? IconButton(
-                      tooltip: 'Open attachment',
-                      icon: const Icon(Icons.open_in_new),
-                      onPressed: () => launchUrl(
-                        Uri.parse(attachment['url'] as String),
-                        mode: LaunchMode.externalApplication,
-                      ),
-                    )
-                  : null,
-            ),
-          ),
-        const SizedBox(height: 20),
-        FutureBuilder<List<Map<String, dynamic>>>(
-          future: ComplaintServiceData.instance.getStatusHistory(complaint.id),
-          builder: (context, snapshot) => ExpansionTile(
-            title: const Text('Status history'),
-            children: (snapshot.data ?? const <Map<String, dynamic>>[])
-                .map(
-                  (item) => ListTile(
-                    title: Text(item['status']?.toString() ?? ''),
-                    subtitle: Text(item['note']?.toString() ?? ''),
-                  ),
-                )
-                .toList(),
-          ),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+
+    final titleText = title.text.trim();
+    final descriptionText = description.text.trim();
+    title.dispose();
+    description.dispose();
+    if (submitted != true || !context.mounted) return;
+
+    try {
+      await ComplaintServiceData.instance.resubmitComplaint(
+        current,
+        title: titleText,
+        description: descriptionText,
+        category: category,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Complaint resubmitted successfully.')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Resubmission failed: $error')),
+      );
+    }
+  }
 }

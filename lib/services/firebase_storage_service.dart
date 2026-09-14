@@ -9,7 +9,7 @@ class FirebaseStorageService {
   FirebaseStorageService._();
 
   static final instance = FirebaseStorageService._();
-  static const uploadsEnabled = false;
+  static const uploadsEnabled = true;
   static const maxFileSizeBytes = 5 * 1024 * 1024;
   static const allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
   static const allowedMimeTypes = [

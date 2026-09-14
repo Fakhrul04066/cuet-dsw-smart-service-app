@@ -73,13 +73,13 @@ class GeminiAssistantService {
           'Complete the missing fields before final submission to reduce delays.',
         );
       }
-      if (unclearStatements.isEmpty && missingFields.isEmpty) {
-        suggestions.add('The form appears to be mostly complete.');
-      }
-      if (suggestions.isEmpty) {
-        suggestions.add(
-          'No major issues detected from the current information.',
-        );
+      final hasReviewItems = missingFields.isNotEmpty ||
+          unclearStatements.isNotEmpty ||
+          possibleInconsistencies.isNotEmpty;
+      if (!hasReviewItems && suggestions.isEmpty) {
+        suggestions.add('No major issues detected from the current information.');
+      } else if (hasReviewItems && suggestions.isEmpty) {
+        suggestions.add('Review the items above before submitting the form.');
       }
 
       return {
@@ -124,7 +124,7 @@ class GeminiAssistantService {
       String recommendedOffice = _recommendOffice(suggestedCategory);
       final summary = _buildSummary(suggestedCategory, normalizedTitle);
       final similarIssueHint =
-          'This is an advisory triage only. No exact duplicate search is performed in this prototype.';
+          'This is advisory triage only. Dedicated duplicate and image-evidence analysis is available in complaint management.';
 
       return {
         'suggestedCategory': suggestedCategory,
@@ -142,7 +142,7 @@ class GeminiAssistantService {
         'urgency': 'Medium',
         'recommendedOffice': 'DSW Office',
         'similarIssueHint':
-            'AI complaint triage is currently unavailable. No exact duplicate check is available.',
+            'AI complaint triage is currently unavailable. Staff can retry AI analysis from complaint management.',
         'advisoryNotice': advisoryNotice,
       };
     }

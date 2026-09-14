@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/student_auth_mapper.dart';
-import 'auth_gate.dart';
+import 'student_register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,9 +15,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _identifierController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
   bool _obscurePassword = true;
   bool _rememberMe = false;
   bool _isLoading = false;
+
   String _selectedRole = 'student';
 
   @override
@@ -31,8 +33,10 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (_selectedRole) {
       case 'dsw_officer':
         return 'DSW Officer Login';
+
       case 'dsw_director':
         return 'DSW Director Login';
+
       default:
         return 'Student Login';
     }
@@ -42,8 +46,10 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (_selectedRole) {
       case 'dsw_officer':
         return 'Manage student welfare services';
+
       case 'dsw_director':
         return 'Process and approve institutional actions';
+
       default:
         return 'Access your student welfare services';
     }
@@ -52,9 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
   String get _identifierLabel {
     switch (_selectedRole) {
       case 'dsw_officer':
-        return 'Email';
       case 'dsw_director':
         return 'Email';
+
       default:
         return 'Student ID';
     }
@@ -64,8 +70,10 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (_selectedRole) {
       case 'dsw_officer':
         return 'officer1@demo.com';
+
       case 'dsw_director':
         return 'director@demo.com';
+
       default:
         return 'e.g. 2104001';
     }
@@ -74,9 +82,9 @@ class _LoginScreenState extends State<LoginScreen> {
   TextInputType get _keyboardType {
     switch (_selectedRole) {
       case 'dsw_officer':
-        return TextInputType.emailAddress;
       case 'dsw_director':
         return TextInputType.emailAddress;
+
       default:
         return TextInputType.number;
     }
@@ -95,7 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (_selectedRole == 'student') {
       if (!StudentAuthMapper.isValidStudentId(identifier)) {
-        _showMessage('Please enter a valid Student ID (for example 2104001).');
+        _showMessage(
+          'Please enter a valid Student ID (for example 2104001).',
+        );
         return;
       }
     } else if (!StudentAuthMapper.isEmailLike(identifier)) {
@@ -103,23 +113,21 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
-      final user = await AuthService.instance.signInWithSelectedRole(
+      await AuthService.instance.signInWithSelectedRole(
         selectedRole: _selectedRole,
         loginIdentifier: identifier,
         password: password,
       );
 
-      if (!mounted) return;
-
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthGate()),
-        (route) => false,
-      );
-
-      _showMessage('Welcome, ${user.name.isNotEmpty ? user.name : user.email}');
+      // Do not navigate manually here. AuthGate listens to Firebase auth state
+      // and will replace the login UI with the correct dashboard. Pushing a
+      // second AuthGate while the first one is rebuilding can corrupt the
+      // widget lifecycle in debug mode (_dependents.isEmpty assertion).
     } on FirebaseAuthException catch (error) {
       final message = _friendlyAuthError(error.code);
       _showMessage(message);
@@ -133,7 +141,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -142,16 +152,25 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (code) {
       case 'invalid-email':
         return 'Invalid email address.';
+
       case 'user-not-found':
         return 'No account found for that email or student ID.';
+
       case 'wrong-password':
         return 'Incorrect password. Please try again.';
+
+      case 'invalid-credential':
+        return 'Invalid Student ID, email, or password.';
+
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
+
       case 'network-request-failed':
         return 'Network error. Please check your connection.';
+
       case 'user-disabled':
         return 'This account has been disabled.';
+
       default:
         return 'Authentication failed. Please try again.';
     }
@@ -159,9 +178,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
   }
 
   void _onRoleChanged(String? value) {
@@ -172,7 +194,17 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _selectedRole = value;
       _identifierController.clear();
+      _passwordController.clear();
     });
+  }
+
+  void _openStudentRegistration() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const StudentRegisterScreen(),
+      ),
+    );
   }
 
   @override
@@ -183,11 +215,14 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
+              constraints: const BoxConstraints(
+                maxWidth: 430,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 20),
+
                   Container(
                     width: 72,
                     height: 72,
@@ -201,14 +236,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       size: 40,
                     ),
                   ),
+
                   const SizedBox(height: 20),
+
                   Text(
                     _title,
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
+
                   const SizedBox(height: 8),
-                  Text(_subtitle, style: Theme.of(context).textTheme.bodyLarge),
+
+                  Text(
+                    _subtitle,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+
                   const SizedBox(height: 20),
+
                   SegmentedButton<String>(
                     segments: const [
                       ButtonSegment<String>(
@@ -224,12 +268,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         label: Text('DSW Director'),
                       ),
                     ],
-                    selected: {_selectedRole},
-                    onSelectionChanged: (selection) =>
-                        _onRoleChanged(selection.first),
+                    selected: {
+                      _selectedRole,
+                    },
+                    onSelectionChanged: (selection) {
+                      _onRoleChanged(
+                        selection.first,
+                      );
+                    },
                     showSelectedIcon: false,
                   ),
+
                   const SizedBox(height: 24),
+
                   TextFormField(
                     controller: _identifierController,
                     decoration: InputDecoration(
@@ -243,13 +294,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     keyboardType: _keyboardType,
                   ),
+
                   const SizedBox(height: 18),
+
                   TextFormField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      prefixIcon: const Icon(
+                        Icons.lock_outline_rounded,
+                      ),
                       suffixIcon: IconButton(
                         onPressed: () {
                           setState(() {
@@ -264,7 +319,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 18),
+
                   Row(
                     children: [
                       Checkbox(
@@ -275,15 +332,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           });
                         },
                       ),
+
                       const Text('Remember me'),
+
                       const Spacer(),
+
                       TextButton(
                         onPressed: () {},
-                        child: const Text('Forgot Password?'),
+                        child: const Text(
+                          'Forgot Password?',
+                        ),
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 18),
+
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
@@ -298,7 +362,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? const SizedBox(
                               height: 18,
                               width: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
                             )
                           : const Text(
                               'Login',
@@ -309,6 +375,25 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
+
+                  if (_selectedRole == 'student') ...[
+                    const SizedBox(height: 10),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: _openStudentRegistration,
+                        icon: const Icon(
+                          Icons.person_add_alt_1_rounded,
+                        ),
+                        label: const Text(
+                          'Create Student Account',
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
                 ],
               ),
             ),

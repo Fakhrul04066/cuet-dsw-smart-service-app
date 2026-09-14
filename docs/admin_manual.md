@@ -1,59 +1,72 @@
-# Admin Manual
+# DSW Officer & Director Manual
 
-## Login
+## Access
 
-Use the shared admin/official login flow for the dashboard.
+Operational access is role based. Staff profiles in `/users/{uid}` must use either:
 
-## Dashboard
+- `dsw_officer`
+- `dsw_director`
 
-The dashboard provides an overview of:
+Students cannot self-assign a staff role.
 
-- pending certificates
-- pending transfers
-- open complaints
-- confidential complaints
-- resolved complaints
+## Unified request queue
 
-## Certificate Review
+Open **DSW Officer Request Queue** (or **DSW Request Oversight** for director view) to manage the six unified service categories.
 
-1. Open the certificate request list.
-2. Review the student details and information.
-3. Add an official note if necessary.
-4. Request correction when needed.
-5. Approve or reject the request only after explicit official action.
+The enforced workflow is:
 
-## Hall Transfer Workflow
+`SUBMITTED → UNDER_REVIEW → ASSIGNED → RESOLVED`
 
-1. Review current hall and preferred hall.
-2. Inspect supporting evidence.
-3. Request a correction if more details are needed.
-4. Approve or reject after official review.
+### 1. Start review
 
-## Complaint Handling
+A newly submitted request can only move to **Under Review**.
 
-1. Review the complaint list.
-2. Inspect the complaint details.
-3. Check the AI triage recommendation.
-4. Accept, ignore, or edit the recommendation manually.
-5. Make the actual assignment and status update only after explicit action.
+### 2. Run AI analysis
 
-## Confidential Complaints
+Staff can re-run AI analysis from the queue. Staff-side analysis can:
 
-Confidential complaints should be treated as restricted records. Only authorized officials/admins may access them.
+- predict a suggested priority
+- summarize the request
+- suggest the responsible office
+- flag risk indicators
+- compare against a broader request set for possible duplicates
+- analyze JPG/PNG supporting evidence
 
-## Status Updates
+AI output is advisory. Staff remain responsible for every workflow decision.
 
-Use official notes and status updates to notify the student. These updates create audit entries and status history.
+### 3. Assign officer
 
-## Audit Logs
+An **Under Review** request can be assigned only to a Firestore user whose role is `dsw_officer`. The student and responsible officer receive in-app workflow notifications.
 
-Every administrative action should be recorded in audit logs, including:
+### 4. Resolve
 
-- status changes
-- complaint assignments
-- decisions
-- final certificate upload events
+An **Assigned** request can be resolved by the assigned officer or a DSW director. A non-empty official resolution note is required.
 
-## Reporting
+## Application history and audit trail
 
-The dashboard includes basic counters and reporting views for certificates, transfers, complaints, and status totals.
+Each unified request has a history subcollection containing status, action, note, actor and timestamp. Staff workflow transitions also create immutable audit-log records.
+
+## Complaint operations
+
+The complaint management screen supports the same business status sequence and officer assignment. Staff can run cross-record AI duplicate/image analysis, review AI suggestions, then make the actual administrative decision manually.
+
+## Analytics dashboard
+
+The analytics dashboard shows operational KPIs such as:
+
+- total/open/resolved requests
+- high or urgent predicted/official priorities
+- unresolved complaints
+- duplicate flags
+- average resolution time
+- request/status/category breakdowns
+
+Gemini receives aggregated metrics only for management insights; case text and student identifiers are not sent in the analytics prompt.
+
+## Security responsibilities
+
+- Do not share staff accounts.
+- Do not resolve a request without an official outcome note.
+- Treat confidential complaints and uploaded documents as restricted records.
+- Do not treat AI output as an official decision.
+- Review Firebase audit logs and access rules before production launch.

@@ -22,10 +22,18 @@ class Complaint {
   final String? aiSuggestedPriority;
   final String? aiSummary;
   final String? aiSuggestedDepartment;
+  final double aiDuplicateScore;
+  final String aiDuplicateComplaintId;
+  final String aiDuplicateReason;
+  final String aiImageAssessment;
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? officerResponse;
+  final String? directorResponse;
+  final String? correctionNote;
+  final String assignedOfficerUid;
+  final String assignedOfficerName;
   final bool isConfidential;
   final List<Map<String, dynamic>> attachments;
 
@@ -42,10 +50,18 @@ class Complaint {
     this.aiSuggestedPriority,
     this.aiSummary,
     this.aiSuggestedDepartment,
+    this.aiDuplicateScore = 0,
+    this.aiDuplicateComplaintId = '',
+    this.aiDuplicateReason = '',
+    this.aiImageAssessment = '',
     required this.status,
     required this.createdAt,
     required this.updatedAt,
     this.officerResponse,
+    this.directorResponse,
+    this.correctionNote,
+    this.assignedOfficerUid = '',
+    this.assignedOfficerName = '',
     this.isConfidential = false,
     this.attachments = const [],
   });
@@ -64,44 +80,60 @@ class Complaint {
       title: (data['title'] ?? '').toString(),
       description: (data['description'] ?? '').toString(),
       category: (data['category'] ?? '').toString(),
-      priority: (data['priority'] ?? 'NORMAL').toString(),
+      priority: (data['priority'] ?? 'NORMAL').toString().toUpperCase(),
       aiSuggestedCategory: _stringOrNull(data['aiSuggestedCategory']),
       aiSuggestedPriority: _stringOrNull(data['aiSuggestedPriority']),
       aiSummary: _stringOrNull(data['aiSummary']),
       aiSuggestedDepartment: _stringOrNull(data['aiSuggestedDepartment']),
+      aiDuplicateScore: _toDouble(data['aiDuplicateScore']),
+      aiDuplicateComplaintId: (data['aiDuplicateComplaintId'] ?? '').toString(),
+      aiDuplicateReason: (data['aiDuplicateReason'] ?? '').toString(),
+      aiImageAssessment: (data['aiImageAssessment'] ?? '').toString(),
       status: (data['status'] ?? 'SUBMITTED').toString(),
       createdAt: _toDateTime(data['createdAt'], fallback: now),
       updatedAt: _toDateTime(data['updatedAt'], fallback: now),
       officerResponse: _stringOrNull(data['officerResponse']),
+      directorResponse: _stringOrNull(data['directorResponse']),
+      correctionNote: _stringOrNull(data['correctionNote']),
+      assignedOfficerUid: (data['assignedOfficerUid'] ?? '').toString(),
+      assignedOfficerName: (data['assignedOfficerName'] ?? '').toString(),
       isConfidential: data['isConfidential'] == true,
       attachments: _attachmentList(data['attachments']),
     );
   }
 
   Map<String, dynamic> toFirestore({bool useServerTimestamps = false}) => {
-    'id': id,
-    'trackingNumber': trackingNumber,
-    'studentId': studentId,
-    'studentUid': studentUid,
-    'title': title,
-    'description': description,
-    'category': category,
-    'priority': priority,
-    'aiSuggestedCategory': aiSuggestedCategory,
-    'aiSuggestedPriority': aiSuggestedPriority,
-    'aiSummary': aiSummary,
-    'aiSuggestedDepartment': aiSuggestedDepartment,
-    'status': status,
-    'createdAt': useServerTimestamps
-        ? FieldValue.serverTimestamp()
-        : Timestamp.fromDate(createdAt),
-    'updatedAt': useServerTimestamps
-        ? FieldValue.serverTimestamp()
-        : Timestamp.fromDate(updatedAt),
-    'officerResponse': officerResponse,
-    'isConfidential': isConfidential,
-    'attachments': attachments,
-  };
+        'id': id,
+        'trackingNumber': trackingNumber,
+        'studentId': studentId,
+        'studentUid': studentUid,
+        'title': title,
+        'description': description,
+        'category': category,
+        'priority': priority,
+        'aiSuggestedCategory': aiSuggestedCategory,
+        'aiSuggestedPriority': aiSuggestedPriority,
+        'aiSummary': aiSummary,
+        'aiSuggestedDepartment': aiSuggestedDepartment,
+        'aiDuplicateScore': aiDuplicateScore,
+        'aiDuplicateComplaintId': aiDuplicateComplaintId,
+        'aiDuplicateReason': aiDuplicateReason,
+        'aiImageAssessment': aiImageAssessment,
+        'status': status,
+        'createdAt': useServerTimestamps
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(createdAt),
+        'updatedAt': useServerTimestamps
+            ? FieldValue.serverTimestamp()
+            : Timestamp.fromDate(updatedAt),
+        'officerResponse': officerResponse,
+        'directorResponse': directorResponse,
+        'correctionNote': correctionNote,
+        'assignedOfficerUid': assignedOfficerUid,
+        'assignedOfficerName': assignedOfficerName,
+        'isConfidential': isConfidential,
+        'attachments': attachments,
+      };
 
   Complaint copyWith({
     String? id,
@@ -116,32 +148,49 @@ class Complaint {
     String? aiSuggestedPriority,
     String? aiSummary,
     String? aiSuggestedDepartment,
+    double? aiDuplicateScore,
+    String? aiDuplicateComplaintId,
+    String? aiDuplicateReason,
+    String? aiImageAssessment,
     String? status,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? officerResponse,
+    String? directorResponse,
+    String? correctionNote,
+    String? assignedOfficerUid,
+    String? assignedOfficerName,
     bool? isConfidential,
     List<Map<String, dynamic>>? attachments,
   }) => Complaint(
-    id: id ?? this.id,
-    trackingNumber: trackingNumber ?? this.trackingNumber,
-    studentId: studentId ?? this.studentId,
-    studentUid: studentUid ?? this.studentUid,
-    title: title ?? this.title,
-    description: description ?? this.description,
-    category: category ?? this.category,
-    priority: priority ?? this.priority,
-    aiSuggestedCategory: aiSuggestedCategory ?? this.aiSuggestedCategory,
-    aiSuggestedPriority: aiSuggestedPriority ?? this.aiSuggestedPriority,
-    aiSummary: aiSummary ?? this.aiSummary,
-    aiSuggestedDepartment: aiSuggestedDepartment ?? this.aiSuggestedDepartment,
-    status: status ?? this.status,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    officerResponse: officerResponse ?? this.officerResponse,
-    isConfidential: isConfidential ?? this.isConfidential,
-    attachments: attachments ?? this.attachments,
-  );
+        id: id ?? this.id,
+        trackingNumber: trackingNumber ?? this.trackingNumber,
+        studentId: studentId ?? this.studentId,
+        studentUid: studentUid ?? this.studentUid,
+        title: title ?? this.title,
+        description: description ?? this.description,
+        category: category ?? this.category,
+        priority: priority ?? this.priority,
+        aiSuggestedCategory: aiSuggestedCategory ?? this.aiSuggestedCategory,
+        aiSuggestedPriority: aiSuggestedPriority ?? this.aiSuggestedPriority,
+        aiSummary: aiSummary ?? this.aiSummary,
+        aiSuggestedDepartment: aiSuggestedDepartment ?? this.aiSuggestedDepartment,
+        aiDuplicateScore: aiDuplicateScore ?? this.aiDuplicateScore,
+        aiDuplicateComplaintId:
+            aiDuplicateComplaintId ?? this.aiDuplicateComplaintId,
+        aiDuplicateReason: aiDuplicateReason ?? this.aiDuplicateReason,
+        aiImageAssessment: aiImageAssessment ?? this.aiImageAssessment,
+        status: status ?? this.status,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+        officerResponse: officerResponse ?? this.officerResponse,
+        directorResponse: directorResponse ?? this.directorResponse,
+        correctionNote: correctionNote ?? this.correctionNote,
+        assignedOfficerUid: assignedOfficerUid ?? this.assignedOfficerUid,
+        assignedOfficerName: assignedOfficerName ?? this.assignedOfficerName,
+        isConfidential: isConfidential ?? this.isConfidential,
+        attachments: attachments ?? this.attachments,
+      );
 
   static DateTime _toDateTime(dynamic value, {required DateTime fallback}) {
     if (value is Timestamp) return value.toDate();
@@ -156,11 +205,15 @@ class Complaint {
     return result.isEmpty ? null : result;
   }
 
-  static List<Map<String, dynamic>> _attachmentList(dynamic value) =>
-      value is List
+  static List<Map<String, dynamic>> _attachmentList(dynamic value) => value is List
       ? value
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList()
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
       : const [];
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
 }

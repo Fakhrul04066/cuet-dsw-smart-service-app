@@ -135,13 +135,8 @@ class _AuthErrorScreen extends StatelessWidget {
                 const SizedBox(height: 18),
                 FilledButton(
                   onPressed: () async {
+                    // AuthGate itself owns the login/dashboard switch.
                     await AuthService.instance.signOut();
-                    if (context.mounted) {
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        (route) => false,
-                      );
-                    }
                   },
                   child: const Text('Return to Login'),
                 ),

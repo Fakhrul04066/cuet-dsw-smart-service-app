@@ -20,7 +20,18 @@ service firebase.storage {
     match /applications/{applicationId}/documents/{userId}/{fileName} {
       allow read: if signedIn() && (
         request.auth.uid == userId ||
-        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director']
+        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director', 'officer', 'director', 'DSW Officer', 'DSW Director']
+      );
+      allow create: if signedIn() && request.auth.uid == userId &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType in ['application/pdf', 'image/jpeg', 'image/png'];
+      allow update, delete: if false;
+    }
+
+    match /service_requests/{requestId}/documents/{userId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == userId ||
+        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director', 'officer', 'director', 'DSW Officer', 'DSW Director']
       );
       allow create: if signedIn() && request.auth.uid == userId &&
         request.resource.size <= 5 * 1024 * 1024 &&
@@ -31,7 +42,7 @@ service firebase.storage {
     match /complaints/{complaintId}/attachments/{userId}/{fileName} {
       allow read: if signedIn() && (
         request.auth.uid == userId ||
-        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director']
+        userProfile(request.auth.uid).data.role in ['dsw_officer', 'dsw_director', 'officer', 'director', 'DSW Officer', 'DSW Director']
       );
       allow create: if signedIn() && request.auth.uid == userId &&
         request.resource.size <= 5 * 1024 * 1024 &&

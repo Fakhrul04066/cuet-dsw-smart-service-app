@@ -6,10 +6,12 @@ import '../services/notification_service.dart';
 import 'character_certificate_screen.dart';
 import 'complaint_screen.dart';
 import 'hall_transfer_screen.dart';
-import 'login_screen.dart';
 import 'my_applications_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
+import 'service_request_submission_screen.dart';
+import 'my_service_requests_screen.dart';
+import 'ai_helpdesk_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key});
@@ -34,13 +36,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     });
   }
 
-  Future<void> _signOut(BuildContext context) async {
+  Future<void> _signOut() async {
+    // AuthGate owns authentication navigation. Signing out is enough for it
+    // to rebuild to LoginScreen; avoid a second competing Navigator update.
     await AuthService.instance.signOut();
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
   }
 
   Future<void> _open(BuildContext context, Widget screen) async {
@@ -75,7 +74,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             IconButton(
               icon: const Icon(Icons.logout_rounded),
               tooltip: 'Logout',
-              onPressed: () => _signOut(context),
+              onPressed: _signOut,
             ),
           ],
         ),
@@ -106,9 +105,18 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 ),
                 const SizedBox(height: 12),
                 _DashboardCard(
+                  icon: Icons.business_center_outlined,
+                  title: 'DSW Service Center',
+                  subtitle: 'Submit hall, financial, welfare, event, certificate or grievance requests',
+                  onTap: () => _open(
+                    context,
+                    const ServiceRequestSubmissionScreen(),
+                  ),
+                ),
+                _DashboardCard(
                   icon: Icons.description_outlined,
                   title: 'Character Certificate',
-                  subtitle: 'Apply and track your certificate',
+                  subtitle: 'Legacy specialized certificate workflow',
                   onTap: () => _open(context, const CharacterCertificateScreen()),
                 ),
                 _DashboardCard(
@@ -143,6 +151,21 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                _DashboardCard(
+                  icon: Icons.track_changes_outlined,
+                  title: 'Track Service Requests',
+                  subtitle: 'See status, assigned officer, documents and application history',
+                  onTap: () => _open(
+                    context,
+                    MyServiceRequestsScreen(studentUid: profile.uid),
+                  ),
+                ),
+                _DashboardCard(
+                  icon: Icons.smart_toy_outlined,
+                  title: 'AI DSW Helpdesk',
+                  subtitle: 'Ask about DSW services and the request process',
+                  onTap: () => _open(context, const AiHelpdeskScreen()),
+                ),
                 _DashboardCard(
                   icon: Icons.history_outlined,
                   title: 'My Complaints',

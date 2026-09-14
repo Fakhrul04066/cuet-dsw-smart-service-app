@@ -4,8 +4,10 @@ import '../models/app_notification.dart';
 import '../services/application_service.dart';
 import '../services/complaint_service_data.dart';
 import '../services/notification_service_data.dart';
+import '../services/service_request_service.dart';
 import 'application_details_screen.dart';
 import 'complaint_screen.dart';
+import 'my_service_requests_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -68,6 +70,20 @@ class _NotificationTile extends StatelessWidget {
           context,
           MaterialPageRoute(
             builder: (_) => ComplaintDetailsScreen(complaint: complaint),
+          ),
+        );
+      }
+      return;
+    }
+    if (notification.type.startsWith('service_request')) {
+      final request = await ServiceRequestService.instance.getById(
+        notification.relatedId,
+      );
+      if (context.mounted && request != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ServiceRequestDetailsScreen(request: request),
           ),
         );
       }

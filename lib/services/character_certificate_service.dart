@@ -9,124 +9,58 @@ import '../models/user_model.dart';
 import 'application_history_service.dart';
 import 'application_service.dart';
 import 'audit_log_service.dart';
-import 'user_service.dart';
 import 'notification_service.dart';
+import 'user_service.dart';
 
 class CharacterCertificateStatus {
   static const String submitted = 'SUBMITTED';
-  static const String officerReview = 'OFFICER_REVIEW';
   static const String correctionRequired = 'CORRECTION_REQUIRED';
-  static const String officerApproved = 'OFFICER_APPROVED';
-  static const String directorReview = 'DIRECTOR_REVIEW';
+  static const String resubmitted = 'RESUBMITTED';
+  static const String officerReviewComplete = 'OFFICER_REVIEW_COMPLETE';
   static const String approved = 'APPROVED';
-  static const String certificateIssued = 'CERTIFICATE_ISSUED';
   static const String rejected = 'REJECTED';
+  static const String certificateIssued = 'CERTIFICATE_ISSUED';
 
-  static const List<String> ordered = [
-    submitted,
-    officerReview,
-    correctionRequired,
-    officerApproved,
-    directorReview,
-    approved,
-    certificateIssued,
-    rejected,
-  ];
-
-  static String timelineLabel(String status) {
-    switch (status) {
-      case submitted:
-        return 'Submitted';
-      case officerReview:
-        return 'Officer Processing';
-      case correctionRequired:
-        return 'Correction Required';
-      case officerApproved:
-        return 'Officer Approved';
-      case directorReview:
-        return 'Director Processing';
-      case approved:
-        return 'Approved';
-      case certificateIssued:
-        return 'Certificate Issued';
-      case rejected:
-        return 'Rejected';
-      default:
-        return status;
-    }
-  }
+  static String timelineLabel(String status) => switch (status) {
+        submitted => 'Submitted for Officer Review',
+        correctionRequired => 'Resubmission Required',
+        resubmitted => 'Resubmitted for Officer Review',
+        officerReviewComplete => 'Sent to DSW Director',
+        approved => 'Approved by Director',
+        rejected => 'Rejected by Director',
+        certificateIssued => 'Certificate Issued',
+        _ => status,
+      };
 
   static List<String> trackingTimeline(String currentStatus) {
-    final order = [
-      submitted,
-      officerReview,
-      officerApproved,
-      directorReview,
-      approved,
-      certificateIssued,
-    ];
-
-    final currentIndex = order.indexOf(currentStatus);
-    if (currentIndex == -1) {
-      return [
-        submitted,
-        officerReview,
-        officerApproved,
-        directorReview,
-        approved,
-        certificateIssued,
-      ];
+    if (currentStatus == correctionRequired) {
+      return [submitted, correctionRequired];
     }
-
-    final result = <String>[];
-    for (int index = 0; index < order.length; index++) {
-      final value = order[index];
-      result.add(value);
-      if (index == currentIndex) {
-        break;
-      }
+    if (currentStatus == resubmitted) {
+      return [submitted, correctionRequired, resubmitted];
     }
-    return result;
+    if (currentStatus == officerReviewComplete) {
+      return [submitted, officerReviewComplete];
+    }
+    if (currentStatus == approved) {
+      return [submitted, officerReviewComplete, approved];
+    }
+    if (currentStatus == certificateIssued) {
+      return [submitted, officerReviewComplete, approved, certificateIssued];
+    }
+    if (currentStatus == rejected) {
+      return [submitted, officerReviewComplete, rejected];
+    }
+    return [submitted];
   }
 }
 
 class CharacterCertificateService {
   CharacterCertificateService._();
-
   static final CharacterCertificateService instance =
       CharacterCertificateService._();
 
   final ApplicationService _applicationService = ApplicationService.instance;
-
-  static const Map<String, Set<String>> validTransitions = {
-    CharacterCertificateStatus.submitted: {
-      CharacterCertificateStatus.officerReview,
-    },
-    CharacterCertificateStatus.officerReview: {
-      CharacterCertificateStatus.correctionRequired,
-      CharacterCertificateStatus.officerApproved,
-      CharacterCertificateStatus.rejected,
-    },
-    CharacterCertificateStatus.correctionRequired: {
-      CharacterCertificateStatus.officerReview,
-    },
-    CharacterCertificateStatus.officerApproved: {
-      CharacterCertificateStatus.directorReview,
-    },
-    CharacterCertificateStatus.directorReview: {
-      CharacterCertificateStatus.approved,
-      CharacterCertificateStatus.rejected,
-    },
-    CharacterCertificateStatus.approved: {
-      CharacterCertificateStatus.certificateIssued,
-    },
-    CharacterCertificateStatus.certificateIssued: <String>{},
-    CharacterCertificateStatus.rejected: <String>{},
-  };
-
-  bool canTransition(String fromStatus, String toStatus) {
-    return validTransitions[fromStatus]?.contains(toStatus) ?? false;
-  }
 
   Future<Application> submitCharacterCertificate({
     required String purpose,
@@ -134,19 +68,11 @@ class CharacterCertificateService {
     String? applicationId,
     List<Map<String, dynamic>> documents = const [],
   }) async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      throw StateError('No authenticated student found.');
-    }
-
-    final studentProfile = await UserService.instance.getUserById(
-      currentUser.uid,
-    );
-    if (studentProfile == null) {
-      throw StateError('Student profile not found.');
-    }
-
-    if (StudentUser.normalizeRole(studentProfile.role) != 'student') {
+    final actor = FirebaseAuth.instance.currentUser;
+    if (actor == null) throw StateError('No authenticated student found.');
+    final profile = await UserService.instance.getUserById(actor.uid);
+    if (profile == null ||
+        StudentUser.normalizeRole(profile.role) != 'student') {
       throw StateError(
         'Only students can submit character certificate applications.',
       );
@@ -154,9 +80,9 @@ class CharacterCertificateService {
 
     final application = Application(
       id: applicationId ?? '',
-      studentUid: currentUser.uid,
+      studentUid: actor.uid,
       type: 'character_certificate',
-      studentId: studentProfile.studentId,
+      studentId: profile.studentId,
       status: CharacterCertificateStatus.submitted,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -165,86 +91,54 @@ class CharacterCertificateService {
       documents: documents,
     );
 
-    final createdApplicationId = await _applicationService.createApplication(
-      application,
-    );
-    final savedApplication = application.copyWith(id: createdApplicationId);
-
+    final id = await _applicationService.createApplication(application);
     await _recordHistory(
-      applicationId: createdApplicationId,
+      applicationId: id,
       action: CharacterCertificateStatus.submitted,
-      performedBy: currentUser.uid,
-      comment: 'Student submitted the character certificate application.',
+      performedBy: actor.uid,
+      comment:
+          'Student submitted the character certificate application for Officer review.',
     );
     await NotificationService.instance.createNotification(
-      userUid: currentUser.uid,
+      userUid: actor.uid,
       title: 'Application submitted',
-      message: 'Your character certificate application was submitted.',
+      message:
+          'Your character certificate application is now visible to DSW Officers.',
       type: 'application_submitted',
-      referenceId: createdApplicationId,
+      referenceId: id,
     );
-
-    return savedApplication;
+    return application.copyWith(id: id);
   }
 
   Future<List<Application>> getStudentApplications() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      return const [];
-    }
-
-    final profile = await UserService.instance.getUserById(currentUser.uid);
-    if (profile == null || profile.studentId.isEmpty) {
-      return const [];
-    }
-
-    return _applicationService.getApplicationsByStudentId(profile.studentId);
+    final actor = FirebaseAuth.instance.currentUser;
+    if (actor == null) return const [];
+    final profile = await UserService.instance.getUserById(actor.uid);
+    if (profile == null) return const [];
+    return _applicationService.getApplicationsByStudentUid(actor.uid);
   }
 
   Future<List<Application>> getOfficerQueue() async {
-    final statuses = [
-      CharacterCertificateStatus.submitted,
-      CharacterCertificateStatus.officerReview,
-      CharacterCertificateStatus.correctionRequired,
-    ];
-
-    final applications = <Application>[];
-    for (final status in statuses) {
-      final items = await _applicationService.getApplicationsByStatus(status);
-      applications.addAll(
-        items.where((item) => item.type == 'character_certificate'),
-      );
-    }
-
-    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return applications;
+    await _requireRole('dsw_officer');
+    final all = await _applicationService.getAllApplications();
+    return all
+        .where((item) => item.type == 'character_certificate')
+        .toList();
   }
 
   Future<List<Application>> getDirectorQueue() async {
-    final statuses = [
-      CharacterCertificateStatus.officerApproved,
-      CharacterCertificateStatus.directorReview,
-      CharacterCertificateStatus.approved,
-    ];
-
-    final applications = <Application>[];
-    for (final status in statuses) {
-      final items = await _applicationService.getApplicationsByStatus(status);
-      applications.addAll(
-        items.where((item) => item.type == 'character_certificate'),
-      );
-    }
-
-    applications.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return applications;
+    await _requireRole('dsw_director');
+    final all = await _applicationService.getAllApplications();
+    return all
+        .where((item) => item.type == 'character_certificate')
+        .toList();
   }
 
   Future<Application> getApplicationById(String applicationId) async {
-    final application = await _applicationService.getApplicationById(
-      applicationId,
-    );
-    if (application == null) {
-      throw StateError('Application not found.');
+    final application =
+        await _applicationService.getApplicationById(applicationId);
+    if (application == null || application.type != 'character_certificate') {
+      throw StateError('Character certificate application not found.');
     }
     return application;
   }
@@ -252,82 +146,57 @@ class CharacterCertificateService {
   Future<Application> officerDecision({
     required String applicationId,
     required String decision,
-    String? comment,
+    required String comment,
   }) async {
-    if ((decision == 'request_correction' || decision == 'reject' || decision == 'approve') &&
-        (comment == null || comment.trim().isEmpty)) {
-      throw StateError('An official note is required for this officer decision.');
-    }
-    final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) {
-      throw StateError('No authenticated officer found.');
-    }
-
+    final officer = await _requireRole('dsw_officer');
     final application = await getApplicationById(applicationId);
-    final actorProfile = await UserService.instance.getUserById(actor.uid);
-    if (actorProfile == null) {
-      throw StateError('Officer profile not found.');
-    }
 
-    if (StudentUser.normalizeRole(actorProfile.role) != 'dsw_officer') {
-      throw StateError(
-        'Only DSW officers can process character certificate applications.',
-      );
-    }
-
-    final nextStatus = switch (decision) {
+    final next = switch (decision) {
       'request_correction' => CharacterCertificateStatus.correctionRequired,
-      'reject' => CharacterCertificateStatus.rejected,
-      'approve' => CharacterCertificateStatus.officerApproved,
-      _ => throw StateError('Unsupported officer decision.'),
+      'complete_review' => CharacterCertificateStatus.officerReviewComplete,
+      _ => throw StateError('Unsupported officer action.'),
     };
 
-    _ensureValidTransition(application.status, nextStatus, 'DSW Officer');
-    final effectiveComment = (comment ?? '').trim().isEmpty
-        ? _officerDecisionMessage(decision)
-        : comment!.trim();
+    // A quick double tap or a delayed UI refresh must not turn a successful
+    // workflow update into a false error. Repeating the same action is a no-op.
+    if (application.status == next) return application;
 
-    final updatedApplication = application.copyWith(
-      status: nextStatus,
-      officerComment: effectiveComment,
-      updatedAt: DateTime.now(),
-    );
+    _ensureStatus(application, [
+      CharacterCertificateStatus.submitted,
+      CharacterCertificateStatus.resubmitted,
+    ]);
+    if (comment.trim().isEmpty) {
+      throw StateError('A review note is required.');
+    }
 
     await _applicationService.updateWorkflowStatus(
       applicationId,
-      status: nextStatus,
-      officerComment: effectiveComment,
+      status: next,
+      currentReviewer: officer.uid,
+      officerComment:
+          decision == 'complete_review' ? comment.trim() : null,
+      correctionNote:
+          decision == 'request_correction' ? comment.trim() : null,
     );
-
-    await _recordHistory(
-      applicationId: applicationId,
-      action: nextStatus,
-      performedBy: actor.uid,
-      comment: effectiveComment,
-    );
-
-    await _recordAudit(
-      actorId: actor.uid,
-      actorRole: 'dsw_officer',
-      action: 'character_certificate_officer_$decision',
-      targetType: 'application',
-      targetId: applicationId,
-      details: {
-        'applicationId': applicationId,
-        'decision': decision,
-        'fromStatus': application.status,
-        'toStatus': nextStatus,
-        'comment': effectiveComment,
-      },
-    );
-
-    await _notifyStudentBestEffort(
+    await _afterStaffTransition(
       application: application,
-      title: 'Application status updated',
-      message: 'Your character certificate application is now $nextStatus.',
+      actor: officer,
+      actorRole: 'dsw_officer',
+      status: next,
+      action: 'character_certificate_officer_$decision',
+      comment: comment.trim(),
     );
-
-    return updatedApplication;
+    return application.copyWith(
+      status: next,
+      currentReviewer: officer.uid,
+      officerComment: decision == 'complete_review'
+          ? comment.trim()
+          : application.officerComment,
+      correctionNote: decision == 'request_correction'
+          ? comment.trim()
+          : application.correctionNote,
+      updatedAt: DateTime.now(),
+    );
   }
 
   Future<Application> directorDecision({
@@ -335,279 +204,151 @@ class CharacterCertificateService {
     required String decision,
     String? comment,
   }) async {
-    developer.log(
-      'DIRECTOR_DECISION_START: applicationId=$applicationId, decision=$decision',
-    );
-
-    if ((decision == 'approve' || decision == 'reject') &&
-        (comment == null || comment.trim().isEmpty)) {
-      throw StateError('An official note is required for this director decision.');
-    }
-    final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) {
-      throw StateError('No authenticated director found.');
-    }
-
+    final director = await _requireRole('dsw_director');
     final application = await getApplicationById(applicationId);
-    final actorProfile = await UserService.instance.getUserById(actor.uid);
-    if (actorProfile == null) {
-      throw StateError('Director profile not found.');
-    }
 
-    if (StudentUser.normalizeRole(actorProfile.role) != 'dsw_director') {
-      throw StateError('Only DSW directors can make final decisions.');
-    }
-
-    final nextStatus = switch (decision) {
-      'approve' => CharacterCertificateStatus.approved,
-      'reject' => CharacterCertificateStatus.rejected,
-      'issue_certificate' => CharacterCertificateStatus.certificateIssued,
-      _ => throw StateError('Unsupported director decision.'),
-    };
-
-    _ensureValidTransition(application.status, nextStatus, 'DSW Director');
-    final effectiveComment = (comment ?? '').trim().isEmpty
-        ? _directorDecisionMessage(decision)
-        : comment!.trim();
-
-    final updatedApplication = application.copyWith(
-      status: nextStatus,
-      directorComment: effectiveComment,
-      updatedAt: DateTime.now(),
-    );
-
-    try {
-      developer.log(
-        'DIRECTOR_APPLICATION_UPDATE_START: applicationId=$applicationId',
-      );
+    if (decision == 'issue_certificate') {
+      if (application.status == CharacterCertificateStatus.certificateIssued) {
+        return application;
+      }
+      _ensureStatus(application, [CharacterCertificateStatus.approved]);
+      final effectiveComment = (comment ?? '').trim().isEmpty
+          ? 'Director issued the certificate.'
+          : comment!.trim();
       await _applicationService.updateWorkflowStatus(
         applicationId,
-        status: nextStatus,
+        status: CharacterCertificateStatus.certificateIssued,
+        currentReviewer: director.uid,
         directorComment: effectiveComment,
       );
-      developer.log(
-        'DIRECTOR_APPLICATION_UPDATE_OK: applicationId=$applicationId',
-      );
-    } catch (e) {
-      developer.log('DIRECTOR_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e');
-      rethrow;
-    }
-
-    try {
-      developer.log(
-        'DIRECTOR_HISTORY_WRITE_START: applicationId=$applicationId, action=$nextStatus',
-      );
-      await _recordHistory(
-        applicationId: applicationId,
-        action: nextStatus,
-        performedBy: actor.uid,
+      await _afterStaffTransition(
+        application: application,
+        actor: director,
+        actorRole: 'dsw_director',
+        status: CharacterCertificateStatus.certificateIssued,
+        action: 'character_certificate_certificate_issued',
         comment: effectiveComment,
       );
-      developer.log('DIRECTOR_HISTORY_WRITE_OK: applicationId=$applicationId');
-    } catch (e) {
-      developer.log('DIRECTOR_HISTORY_WRITE_FAILED: ${e.runtimeType} $e');
-      rethrow;
-    }
-
-    try {
-      developer.log('DIRECTOR_AUDIT_WRITE_START: applicationId=$applicationId');
-      await _recordAudit(
-        actorId: actor.uid,
-        actorRole: 'dsw_director',
-        action: 'character_certificate_director_$decision',
-        targetType: 'application',
-        targetId: applicationId,
-        details: {
-          'applicationId': applicationId,
-          'decision': decision,
-          'fromStatus': application.status,
-          'toStatus': nextStatus,
-          'comment': effectiveComment,
-        },
+      return application.copyWith(
+        status: CharacterCertificateStatus.certificateIssued,
+        currentReviewer: director.uid,
+        directorComment: effectiveComment,
+        updatedAt: DateTime.now(),
       );
-      developer.log('DIRECTOR_AUDIT_WRITE_OK: applicationId=$applicationId');
-    } catch (e) {
-      developer.log('DIRECTOR_AUDIT_WRITE_FAILED: ${e.runtimeType} $e');
-      rethrow;
     }
 
-    await _notifyStudentBestEffort(
-      application: application,
-      title: 'Application status updated',
-      message: 'Your character certificate application is now $nextStatus.',
-      logPrefix: 'DIRECTOR_NOTIFICATION',
+    final next = switch (decision) {
+      'approve' => CharacterCertificateStatus.approved,
+      'reject' => CharacterCertificateStatus.rejected,
+      _ => throw StateError('Unsupported Director decision.'),
+    };
+
+    if (application.status == next) return application;
+
+    _ensureStatus(
+      application,
+      [CharacterCertificateStatus.officerReviewComplete],
     );
+    if ((comment ?? '').trim().isEmpty) {
+      throw StateError('An official Director note is required.');
+    }
 
-    developer.log('DIRECTOR_DECISION_OK: applicationId=$applicationId');
-    return updatedApplication;
+    await _applicationService.updateWorkflowStatus(
+      applicationId,
+      status: next,
+      currentReviewer: director.uid,
+      directorComment: comment!.trim(),
+    );
+    await _afterStaffTransition(
+      application: application,
+      actor: director,
+      actorRole: 'dsw_director',
+      status: next,
+      action: 'character_certificate_director_$decision',
+      comment: comment.trim(),
+    );
+    return application.copyWith(
+      status: next,
+      currentReviewer: director.uid,
+      directorComment: comment.trim(),
+      updatedAt: DateTime.now(),
+    );
   }
 
-  Future<Application> reviewApplicationForOfficer(String applicationId) async {
+  List<String> statusTimelineForApplication(String status) =>
+      CharacterCertificateStatus.trackingTimeline(status);
+
+  Future<StudentUser> _requireRole(String expectedRole) async {
     final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) throw StateError('No authenticated officer found.');
+    if (actor == null) throw StateError('No authenticated user found.');
     final profile = await UserService.instance.getUserById(actor.uid);
     if (profile == null ||
-        StudentUser.normalizeRole(profile.role) != 'dsw_officer') {
-      throw StateError('Only DSW officers can start application processing.');
+        StudentUser.normalizeRole(profile.role) != expectedRole) {
+      throw StateError('This account is not authorized for this action.');
     }
-    final application = await getApplicationById(applicationId);
-    if (application.status == CharacterCertificateStatus.submitted) {
-      final updated = application.copyWith(
-        status: CharacterCertificateStatus.officerReview,
-        updatedAt: DateTime.now(),
+    return profile;
+  }
+
+  void _ensureStatus(Application application, List<String> allowed) {
+    if (!allowed.contains(application.status)) {
+      throw StateError(
+        'Action is not allowed while status is ${application.status}.',
       );
-      await _applicationService.updateWorkflowStatus(
-        applicationId,
-        status: CharacterCertificateStatus.officerReview,
-      );
+    }
+  }
+
+  Future<void> _afterStaffTransition({
+    required Application application,
+    required StudentUser actor,
+    required String actorRole,
+    required String status,
+    required String action,
+    required String comment,
+  }) async {
+    try {
       await _recordHistory(
-        applicationId: applicationId,
-        action: CharacterCertificateStatus.officerReview,
+        applicationId: application.id,
+        action: status,
         performedBy: actor.uid,
-        comment: 'Officer started processing the application.',
+        comment: comment,
       );
-      await _recordAudit(
-        actorId: actor.uid,
-        actorRole: 'dsw_officer',
-        action: 'OFFICER_REVIEW_STARTED',
-        targetType: 'application',
-        targetId: applicationId,
-        details: {
-          'fromStatus': application.status,
-          'toStatus': CharacterCertificateStatus.officerReview,
-        },
-      );
-      return updated;
+    } catch (error) {
+      // The status update is authoritative. A secondary history failure must
+      // not make the already-completed decision look unsuccessful.
+      developer.log('APPLICATION_HISTORY_FAILED: $error');
     }
-    return application;
-  }
-
-  Future<Application> reviewApplicationForDirector(String applicationId) async {
-    developer.log('DIRECTOR_REVIEW_START: applicationId=$applicationId');
-
-    final actor = FirebaseAuth.instance.currentUser;
-    if (actor == null) throw StateError('No authenticated director found.');
-    final profile = await UserService.instance.getUserById(actor.uid);
-    if (profile == null ||
-        StudentUser.normalizeRole(profile.role) != 'dsw_director') {
-      throw StateError('Only DSW directors can start application processing.');
-    }
-    final application = await getApplicationById(applicationId);
-    if (application.status == CharacterCertificateStatus.officerApproved) {
-      final updated = application.copyWith(
-        status: CharacterCertificateStatus.directorReview,
-        updatedAt: DateTime.now(),
-      );
-
-      try {
-        developer.log(
-          'DIRECTOR_REVIEW_APPLICATION_UPDATE_START: applicationId=$applicationId',
-        );
-        await _applicationService.updateWorkflowStatus(
-          applicationId,
-          status: CharacterCertificateStatus.directorReview,
-        );
-        developer.log(
-          'DIRECTOR_REVIEW_APPLICATION_UPDATE_OK: applicationId=$applicationId',
-        );
-      } catch (e) {
-        developer.log(
-          'DIRECTOR_REVIEW_APPLICATION_UPDATE_FAILED: ${e.runtimeType} $e',
-        );
-        rethrow;
-      }
-
-      try {
-        developer.log(
-          'DIRECTOR_REVIEW_HISTORY_WRITE_START: applicationId=$applicationId',
-        );
-        await _recordHistory(
-          applicationId: applicationId,
-          action: CharacterCertificateStatus.directorReview,
-          performedBy: actor.uid,
-          comment: 'Director started processing the application.',
-        );
-        developer.log(
-          'DIRECTOR_REVIEW_HISTORY_WRITE_OK: applicationId=$applicationId',
-        );
-      } catch (e) {
-        developer.log(
-          'DIRECTOR_REVIEW_HISTORY_WRITE_FAILED: ${e.runtimeType} $e',
-        );
-        rethrow;
-      }
-
-      try {
-        developer.log(
-          'DIRECTOR_REVIEW_AUDIT_WRITE_START: applicationId=$applicationId',
-        );
-        await _recordAudit(
+    try {
+      await AuditLogService.instance.addAuditLog(
+        AuditLog(
+          id: '',
           actorId: actor.uid,
-          actorRole: 'dsw_director',
-          action: 'DIRECTOR_REVIEW_STARTED',
+          actorRole: actorRole,
+          action: action,
           targetType: 'application',
-          targetId: applicationId,
+          targetId: application.id,
+          timestamp: DateTime.now(),
           details: {
             'fromStatus': application.status,
-            'toStatus': CharacterCertificateStatus.directorReview,
+            'toStatus': status,
+            'comment': comment,
           },
-        );
-        developer.log(
-          'DIRECTOR_REVIEW_AUDIT_WRITE_OK: applicationId=$applicationId',
-        );
-      } catch (e) {
-        developer.log(
-          'DIRECTOR_REVIEW_AUDIT_WRITE_FAILED: ${e.runtimeType} $e',
-        );
-        rethrow;
-      }
-
-      developer.log('DIRECTOR_REVIEW_OK: applicationId=$applicationId');
-      return updated;
-    }
-    return application;
-  }
-
-  List<String> statusTimelineForApplication(String status) {
-    return CharacterCertificateStatus.trackingTimeline(status);
-  }
-
-  void _ensureValidTransition(
-    String fromStatus,
-    String toStatus,
-    String roleName,
-  ) {
-    if (!canTransition(fromStatus, toStatus)) {
-      throw StateError(
-        '$roleName cannot move from $fromStatus to $toStatus for character certificate applications.',
+        ),
       );
-    }
-  }
-
-  Future<void> _notifyStudentBestEffort({
-    required Application application,
-    required String title,
-    required String message,
-    String logPrefix = 'APPLICATION_NOTIFICATION',
-  }) async {
-    if (application.studentUid.isEmpty) {
-      developer.log('${logPrefix}_SKIPPED: legacy application has no studentUid');
-      return;
-    }
-    try {
-      developer.log('${logPrefix}_WRITE_START: studentUid=${application.studentUid}');
-      await NotificationService.instance.createNotification(
-        userUid: application.studentUid,
-        title: title,
-        message: message,
-        type: 'application_status',
-        referenceId: application.id,
-      );
-      developer.log('${logPrefix}_WRITE_OK: studentUid=${application.studentUid}');
     } catch (error) {
-      // Notifications are secondary. A notification problem must not make an
-      // already-recorded application decision look like it failed.
-      developer.log('${logPrefix}_WRITE_FAILED: ${error.runtimeType} $error');
+      developer.log('APPLICATION_AUDIT_FAILED: $error');
+    }
+    if (application.studentUid.isNotEmpty) {
+      try {
+        await NotificationService.instance.createNotification(
+          userUid: application.studentUid,
+          title: 'Application status updated',
+          message: 'Your character certificate application is now $status.',
+          type: 'application_status',
+          referenceId: application.id,
+        );
+      } catch (error) {
+        developer.log('APPLICATION_NOTIFICATION_FAILED: $error');
+      }
     }
   }
 
@@ -616,64 +357,15 @@ class CharacterCertificateService {
     required String action,
     required String performedBy,
     required String comment,
-  }) async {
-    final entry = ApplicationHistory(
-      id: '',
-      applicationId: applicationId,
-      action: action,
-      performedBy: performedBy,
-      comment: comment,
-      timestamp: DateTime.now(),
-    );
-
-    await ApplicationHistoryService.instance.addHistoryEntry(entry);
-  }
-
-  Future<void> _recordAudit({
-    required String actorId,
-    required String actorRole,
-    required String action,
-    required String targetType,
-    required String targetId,
-    required Map<String, dynamic> details,
-  }) async {
-    final log = AuditLog(
-      id: '',
-      actorId: actorId,
-      actorRole: actorRole,
-      action: action,
-      targetType: targetType,
-      targetId: targetId,
-      timestamp: DateTime.now(),
-      details: details,
-    );
-
-    await AuditLogService.instance.addAuditLog(log);
-  }
-
-  String _officerDecisionMessage(String decision) {
-    switch (decision) {
-      case 'request_correction':
-        return 'Officer requested correction.';
-      case 'reject':
-        return 'Officer rejected the application.';
-      case 'approve':
-        return 'Officer approved the application.';
-      default:
-        return 'Officer updated the application.';
-    }
-  }
-
-  String _directorDecisionMessage(String decision) {
-    switch (decision) {
-      case 'approve':
-        return 'Director approved the application.';
-      case 'reject':
-        return 'Director rejected the application.';
-      case 'issue_certificate':
-        return 'Director issued the certificate.';
-      default:
-        return 'Director updated the application.';
-    }
-  }
+  }) =>
+      ApplicationHistoryService.instance.addHistoryEntry(
+        ApplicationHistory(
+          id: '',
+          applicationId: applicationId,
+          action: action,
+          performedBy: performedBy,
+          comment: comment,
+          timestamp: DateTime.now(),
+        ),
+      );
 }

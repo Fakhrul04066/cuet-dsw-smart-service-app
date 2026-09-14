@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 import '../models/application.dart';
 import '../models/complaint.dart';
@@ -11,11 +11,12 @@ import '../services/notification_service.dart';
 import '../widgets/status_chip.dart';
 import 'application_details_screen.dart';
 import 'complaint_management_screen.dart';
-import 'login_screen.dart';
 import 'notifications_screen.dart';
+import 'service_request_management_screen.dart';
 
 class DSWOfficerDashboardScreen extends StatefulWidget {
   const DSWOfficerDashboardScreen({super.key});
+
   @override
   State<DSWOfficerDashboardScreen> createState() =>
       _DSWOfficerDashboardScreenState();
@@ -47,289 +48,314 @@ class _DSWOfficerDashboardScreenState extends State<DSWOfficerDashboardScreen>
     final applications = [...queues[0], ...queues[1]]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final complaints = await ComplaintServiceData.instance.getAllComplaints();
-    for (final application in applications) {
-      await NotificationService.instance.createForCurrentUserIfMissing(
-        title: 'New application',
-        message:
-            'A ${application.type.replaceAll('_', ' ')} needs officer attention.',
-        type: 'new_application',
-        referenceId: application.id,
-      );
-    }
-    for (final complaint in complaints) {
-      final urgent =
-          complaint.priority == 'URGENT' || complaint.priority == 'HIGH';
-      await NotificationService.instance.createForCurrentUserIfMissing(
-        title: urgent ? 'Urgent complaint' : 'New complaint',
-        message: '${complaint.title} is ready for official processing.',
-        type: urgent ? 'urgent_complaint' : 'new_complaint',
-        referenceId: complaint.id,
-      );
-    }
     return _OfficerData(applications: applications, complaints: complaints);
   }
 
-  void _refresh() {
+  Future<void> _refresh() async {
     if (!mounted) return;
+
+    final nextFuture = _loadData();
     setState(() {
-      _dataFuture = _loadData();
+      _dataFuture = nextFuture;
     });
+
+    try {
+      await nextFuture;
+    } catch (_) {
+      // FutureBuilder displays the loading error in the dashboard.
+    }
   }
 
-  Future<void> _handleDecision(Application application, String decision) async {
-    String? officialNote;
-
-    if (decision != 'review') {
-      officialNote = await showDialog<String>(
-        context: context,
-        builder: (context) {
-          final controller = TextEditingController();
-          return AlertDialog(
-            title: Text(_decisionTitle(decision)),
-            content: TextField(
-              controller: controller,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Official Note',
-                hintText: 'Enter the official note for this decision',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () =>
-                    Navigator.pop(context, controller.text.trim()),
-                child: const Text('Save Note'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (officialNote == null) return;
-      if (officialNote.trim().isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('An official note is required for this action.'),
-            ),
-          );
-        }
-        return;
-      }
-    }
+  Future<void> _handleApplicationAction(
+    Application application,
+    String action,
+  ) async {
+    final note = await _askForNote(
+      title: action == 'request_correction'
+          ? 'Request resubmission'
+          : 'Complete Officer review',
+      label: action == 'request_correction'
+          ? 'What information must the student correct or add?'
+          : 'Officer review note / recommendation',
+      button: action == 'request_correction'
+          ? 'Request resubmission'
+          : 'Send to Director',
+    );
+    if (note == null || !mounted) return;
 
     try {
       if (application.type == HallTransferService.applicationType) {
-        if (decision == 'review') {
-          await HallTransferService.instance.reviewForOfficer(application.id);
-        } else {
-          await HallTransferService.instance.officerDecision(
-            applicationId: application.id,
-            decision: decision,
-            comment: officialNote,
-          );
-        }
-      } else if (decision == 'review') {
-        await CharacterCertificateService.instance.reviewApplicationForOfficer(
-          application.id,
+        await HallTransferService.instance.officerDecision(
+          applicationId: application.id,
+          decision: action,
+          comment: note,
         );
       } else {
         await CharacterCertificateService.instance.officerDecision(
           applicationId: application.id,
-          decision: decision,
-          comment: officialNote,
+          decision: action,
+          comment: note,
         );
       }
       if (!mounted) return;
-      _refresh();
+      await _refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Officer review updated successfully.')),
+      );
     } catch (error) {
-      if (mounted) {
-        String errorMessage = error.toString();
-        if (error is FirebaseException) {
-          errorMessage = 'Firebase Error [${error.code}]: ${error.message}';
-        }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      if (!mounted) return;
+      String message = error.toString();
+      if (error is FirebaseException) {
+        message = 'Firebase Error [${error.code}]: ${error.message}';
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     }
   }
 
-  String _decisionTitle(String decision) => switch (decision) {
-    'review' => 'Start Processing',
-    'request_correction' => 'Request Correction',
-    'reject' => 'Reject Application',
-    'approve' => 'Approve Application',
-    _ => 'Update Application',
-  };
+  Future<String?> _askForNote({
+    required String title,
+    required String label,
+    required String button,
+  }) async {
+    var draft = '';
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextFormField(
+          autofocus: true,
+          minLines: 3,
+          maxLines: 6,
+          decoration: InputDecoration(labelText: label),
+          onChanged: (value) => draft = value,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final note = draft.trim();
+              if (note.isEmpty) return;
+              Navigator.of(dialogContext).pop(note);
+            },
+            child: Text(button),
+          ),
+        ],
+      ),
+    );
+
+    // showDialog completes when pop is called, before the route's reverse
+    // animation is fully removed. Waiting briefly prevents a Firestore-driven
+    // rebuild from tearing down inherited widgets while the dialog route still
+    // has dependents, which can trigger `_dependents.isEmpty` in debug mode.
+    if (result != null && mounted) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    return result;
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('DSW Officer Dashboard'),
-      actions: [
-        _NotificationAction(),
-        IconButton(
-          icon: const Icon(Icons.support_agent_outlined),
-          tooltip: 'Complaints',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const ComplaintManagementScreen(),
-            ),
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.logout_rounded),
-          tooltip: 'Logout',
-          onPressed: () async {
-            await AuthService.instance.signOut();
-            if (context.mounted) {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            }
-          },
-        ),
-      ],
-    ),
-    body: FutureBuilder<_OfficerData>(
-      future: _dataFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: Text('Unable to load officer dashboard: ${snapshot.error}'),
-          );
-        }
-        final data = snapshot.data!;
-        final pending = data.applications
-            .where(
-              (item) => [
-                'SUBMITTED',
-                'OFFICER_REVIEW',
-                'CORRECTION_REQUIRED',
-              ].contains(item.status),
-            )
-            .length;
-        final high = data.complaints
-            .where((item) => ['HIGH', 'URGENT'].contains(item.priority))
-            .length;
-        final processed = data.applications
-            .where(
-              (item) => [
-                'OFFICER_APPROVED',
-                'REJECTED',
-                'APPROVED',
-              ].contains(item.status),
-            )
-            .toList();
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-          children: [
-            Text(
-              'Officer workspace',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 4),
-            const Text('Process applications and complaints by priority.'),
-            const SizedBox(height: 20),
-            _SummaryGrid(
-              items: [
-                ('Pending applications', pending, Icons.assignment_outlined),
-                (
-                  'Pending complaints',
-                  data.complaints
-                      .where(
-                        (item) => !['RESOLVED', 'CLOSED'].contains(item.status),
-                      )
-                      .length,
-                  Icons.report_outlined,
+        appBar: AppBar(
+          title: const Text('DSW Officer Dashboard'),
+          actions: [
+            const _NotificationAction(),
+            IconButton(
+              icon: const Icon(Icons.inbox_outlined),
+              tooltip: 'All service requests',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ServiceRequestManagementScreen(),
                 ),
-                ('High / urgent', high, Icons.priority_high_rounded),
-                (
-                  'Recently processed',
-                  processed.length,
-                  Icons.task_alt_outlined,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text('Applications', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 10),
-            TabBar(
-              controller: _tabs,
-              tabs: const [
-                Tab(text: 'Character Certificate'),
-                Tab(text: 'Hall Transfer'),
-              ],
-            ),
-            SizedBox(
-              height: 430,
-              child: TabBarView(
-                controller: _tabs,
-                children: [
-                  _ApplicationList(
-                    applications: data.applications
-                        .where((item) => item.type == 'character_certificate')
-                        .toList(),
-                    onDecision: _handleDecision,
-                  ),
-                  _ApplicationList(
-                    applications: data.applications
-                        .where(
-                          (item) =>
-                              item.type == HallTransferService.applicationType,
-                        )
-                        .toList(),
-                    onDecision: _handleDecision,
-                  ),
-                ],
               ),
             ),
-            const SizedBox(height: 16),
-            _DashboardLink(
-              title: 'Complaints',
-              subtitle: '$high high or urgent complaints',
-              icon: Icons.support_agent_outlined,
-              onTap: () => Navigator.push(
+            IconButton(
+              icon: const Icon(Icons.support_agent_outlined),
+              tooltip: 'All complaints',
+              onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const ComplaintManagementScreen(),
                 ),
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.logout_rounded),
+              tooltip: 'Logout',
+              onPressed: () => AuthService.instance.signOut(),
+            ),
           ],
-        );
-      },
-    ),
-  );
+        ),
+        body: FutureBuilder<_OfficerData>(
+          future: _dataFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Unable to load officer dashboard: ${snapshot.error}',
+                ),
+              );
+            }
+
+            final data = snapshot.data!;
+            final readyToReview = data.applications
+                .where(
+                  (item) =>
+                      ['SUBMITTED', 'RESUBMITTED'].contains(item.status),
+                )
+                .length;
+            final waitingCorrection = data.applications
+                .where((item) => item.status == 'CORRECTION_REQUIRED')
+                .length;
+            final sentToDirector = data.applications
+                .where((item) => item.status == 'OFFICER_REVIEW_COMPLETE')
+                .length;
+            final urgentComplaints = data.complaints
+                .where((item) => ['HIGH', 'URGENT'].contains(item.priority))
+                .length;
+
+            return RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+                children: [
+                  Text(
+                    'Officer review workspace',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Every DSW Officer can see every request. Officers verify information, request resubmission when needed, and send complete reviews to the Director. Only the Director makes final decisions.',
+                  ),
+                  const SizedBox(height: 18),
+                  _SummaryGrid(
+                    items: [
+                      (
+                        'Ready to review',
+                        readyToReview,
+                        Icons.assignment_outlined,
+                      ),
+                      (
+                        'Waiting resubmission',
+                        waitingCorrection,
+                        Icons.edit_note_outlined,
+                      ),
+                      (
+                        'Sent to Director',
+                        sentToDirector,
+                        Icons.forward_to_inbox_outlined,
+                      ),
+                      (
+                        'High / urgent complaints',
+                        urgentComplaints,
+                        Icons.priority_high_rounded,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'All applications',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 10),
+                  TabBar(
+                    controller: _tabs,
+                    tabs: const [
+                      Tab(text: 'Character Certificate'),
+                      Tab(text: 'Hall Transfer'),
+                    ],
+                  ),
+                  SizedBox(
+                    height: 430,
+                    child: TabBarView(
+                      controller: _tabs,
+                      children: [
+                        _ApplicationList(
+                          applications: data.applications
+                              .where(
+                                (item) =>
+                                    item.type == 'character_certificate',
+                              )
+                              .toList(),
+                          onAction: _handleApplicationAction,
+                        ),
+                        _ApplicationList(
+                          applications: data.applications
+                              .where(
+                                (item) =>
+                                    item.type ==
+                                    HallTransferService.applicationType,
+                              )
+                              .toList(),
+                          onAction: _handleApplicationAction,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _DashboardLink(
+                    title: 'All service requests',
+                    subtitle:
+                        'Review every request, request resubmission, or send to Director',
+                    icon: Icons.inbox_outlined,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const ServiceRequestManagementScreen(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DashboardLink(
+                    title: 'All complaints',
+                    subtitle:
+                        'Every DSW Officer can review all submitted complaints',
+                    icon: Icons.support_agent_outlined,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ComplaintManagementScreen(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
 }
 
 class _NotificationAction extends StatelessWidget {
+  const _NotificationAction();
+
   @override
   Widget build(BuildContext context) => StreamBuilder<int>(
-    stream: NotificationService.instance.streamUnreadCount(),
-    builder: (context, snapshot) => IconButton(
-      tooltip: 'Notifications',
-      icon: Badge(
-        isLabelVisible: (snapshot.data ?? 0) > 0,
-        label: Text('${snapshot.data ?? 0}'),
-        child: const Icon(Icons.notifications_outlined),
-      ),
-      onPressed: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-      ),
-    ),
-  );
+        stream: NotificationService.instance.streamUnreadCount(),
+        builder: (context, snapshot) => IconButton(
+          tooltip: 'Notifications',
+          icon: Badge(
+            isLabelVisible: (snapshot.data ?? 0) > 0,
+            label: Text('${snapshot.data ?? 0}'),
+            child: const Icon(Icons.notifications_outlined),
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+          ),
+        ),
+      );
 }
 
 class _OfficerData {
@@ -338,55 +364,14 @@ class _OfficerData {
   const _OfficerData({required this.applications, required this.complaints});
 }
 
-class _SummaryGrid extends StatelessWidget {
-  final List<(String, int, IconData)> items;
-  const _SummaryGrid({required this.items});
-  @override
-  Widget build(BuildContext context) => GridView.count(
-    crossAxisCount: 2,
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    crossAxisSpacing: 10,
-    mainAxisSpacing: 10,
-    childAspectRatio: 1.45,
-    children: items
-        .map(
-          (item) => Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Icon(item.$3, size: 26),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${item.$2}',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        Text(item.$1, maxLines: 2),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        )
-        .toList(),
-  );
-}
-
 class _ApplicationList extends StatelessWidget {
   final List<Application> applications;
-  final Future<void> Function(Application, String) onDecision;
+  final Future<void> Function(Application, String) onAction;
   const _ApplicationList({
     required this.applications,
-    required this.onDecision,
+    required this.onAction,
   });
+
   @override
   Widget build(BuildContext context) {
     if (applications.isEmpty) {
@@ -397,36 +382,28 @@ class _ApplicationList extends StatelessWidget {
       itemBuilder: (context, index) {
         final application = applications[index];
         final actions = <Widget>[];
-        if (application.status == 'SUBMITTED') {
-          actions.add(
-            OutlinedButton(
-              onPressed: () => onDecision(application, 'review'),
-              child: const Text('Start processing'),
-            ),
-          );
-        } else if (application.status == 'OFFICER_REVIEW') {
+        if (['SUBMITTED', 'RESUBMITTED'].contains(application.status)) {
           actions.addAll([
             OutlinedButton(
-              onPressed: () => onDecision(application, 'request_correction'),
-              child: const Text('Request correction'),
-            ),
-            OutlinedButton(
-              onPressed: () => onDecision(application, 'reject'),
-              child: const Text('Reject'),
+              onPressed: () =>
+                  onAction(application, 'request_correction'),
+              child: const Text('Request resubmission'),
             ),
             FilledButton(
-              onPressed: () => onDecision(application, 'approve'),
-              child: const Text('Approve'),
+              onPressed: () => onAction(application, 'complete_review'),
+              child: const Text('Send to Director'),
             ),
           ]);
         } else if (application.status == 'CORRECTION_REQUIRED') {
           actions.add(
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('Waiting for student correction and resubmission.'),
-            ),
+            const Chip(label: Text('Waiting for student resubmission')),
+          );
+        } else if (application.status == 'OFFICER_REVIEW_COMPLETE') {
+          actions.add(
+            const Chip(label: Text('Waiting for Director decision')),
           );
         }
+
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -461,6 +438,49 @@ class _ApplicationList extends StatelessWidget {
   }
 }
 
+class _SummaryGrid extends StatelessWidget {
+  final List<(String, int, IconData)> items;
+  const _SummaryGrid({required this.items});
+
+  @override
+  Widget build(BuildContext context) => GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1.45,
+        children: items
+            .map(
+              (item) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(item.$3, size: 26),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              '${item.$2}',
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            ),
+                            Text(item.$1, maxLines: 2),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      );
+}
+
 class _DashboardLink extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -472,14 +492,15 @@ class _DashboardLink extends StatelessWidget {
     required this.icon,
     required this.onTap,
   });
+
   @override
   Widget build(BuildContext context) => Card(
-    child: ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
-    ),
-  );
+        child: ListTile(
+          leading: Icon(icon),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: onTap,
+        ),
+      );
 }

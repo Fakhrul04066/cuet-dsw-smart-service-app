@@ -1,39 +1,43 @@
-# Gemini Setup
+# Gemini / Firebase AI Setup
 
-## Purpose
+## Current AI functions
 
-Google Gemini is used for advisory support only in this project. It helps with:
+Firebase AI Logic with Gemini is used for advisory features:
 
-- checking missing form fields
-- flagging unclear statements
-- identifying possible inconsistencies
-- categorizing complaint content
-- suggesting urgency and responsible office
-- summarizing complaint issues
+- request/complaint summary
+- suggested priority and responsible office
+- risk-tag suggestions
+- duplicate-request verification
+- image-based evidence description for JPG/PNG attachments
+- DSW helpdesk responses
+- aggregate operational analytics insights
 
-## Important rule
+## Human-in-the-loop rule
 
-Gemini is not allowed to:
+Gemini must never:
 
-- approve applications
-- reject applications
-- make final decisions
-- resolve complaints automatically
-- assign complaints without official confirmation
+- approve or reject a request
+- assign an officer automatically
+- resolve a request automatically
+- create a disciplinary or medical finding
+- invent CUET policy, fees, deadlines, or eligibility rules
 
-## Secure backend usage
+The app stores AI priority as a **suggestion** (`aiSuggestedPriority`) rather than allowing student-side AI processing to overwrite the operational priority.
 
-The API key must live in Firebase environment config or a secure backend service. It must never be embedded in Flutter code or committed to Git.
+## Firebase configuration
 
-## Recommended backend pattern
+Enable Firebase AI Logic for the Firebase project and verify the Gemini model is available for the project/region used by the app. The current client uses `gemini-2.5-flash` through the `firebase_ai` Flutter package.
 
-- Cloud Function receives form/complaint data
-- Function calls Gemini
-- Function returns a structured JSON payload
-- Flutter app shows the result as advisory only
+## App Check
 
-## Failure handling
+Android debug builds use the App Check debug provider and Android release builds use Play Integrity. If App Check enforcement is enabled, a physical-device debug build must have its debug token registered in **Firebase Console → App Check → your Android app → Manage debug tokens**. Otherwise Firebase AI Logic can reject requests even though the Flutter UI is working.
 
-The UI must gracefully handle Gemini failures and continue with manual input. The app should display:
+The Helpdesk logs the underlying online-AI failure with `AI HELPDESK ERROR:` and automatically provides safe local service guidance when Gemini is unavailable. The priority analyzer also provides a transparent heuristic fallback so AI outages do not block operations.
 
-AI assistance is currently unavailable. You may continue manually.
+Before enforcing App Check for Flutter Web, configure an approved web provider such as reCAPTCHA in Firebase and update application bootstrap accordingly.
+
+## Production recommendation
+
+For an institutional deployment, move AI enrichment to trusted Cloud Functions/server-side code. This centralizes abuse controls, auditability, retry behavior, throttling and privileged cross-record duplicate detection.
+
+AI failure must never block the core DSW workflow; staff can continue processing requests manually.
