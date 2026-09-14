@@ -5,10 +5,15 @@ void main() {
   group('ServiceRequest', () {
     test('supports the six business service categories and lifecycle', () {
       expect(ServiceRequest.requestTypes.length, 6);
-      expect(
-        ServiceRequest.statuses,
-        ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'RESOLVED'],
-      );
+      expect(ServiceRequest.statuses, [
+        'SUBMITTED',
+        'CORRECTION_REQUIRED',
+        'RESUBMITTED',
+        'OFFICER_REVIEW_COMPLETE',
+        'APPROVED',
+        'REJECTED',
+        'RESOLVED',
+      ]);
     });
 
     test('keeps AI predicted priority separate from operational priority', () {
