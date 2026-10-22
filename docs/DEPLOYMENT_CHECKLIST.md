@@ -1,5 +1,14 @@
 # Deployment Checklist
 
+## Pre-deployment verification
+- [ ] Run `flutter pub get`.
+- [ ] Run `dart format --output=none --set-exit-if-changed lib test`.
+- [ ] Run `flutter analyze`.
+- [ ] Run `flutter test`.
+- [ ] Confirm the live Firestore smoke test is not enabled in normal CI runs.
+- [ ] If live smoke testing is required, set `RUN_FIREBASE_CONNECTION_TEST=true` only for an approved emulator or development project.
+- [ ] Confirm no credentials, private keys or production database exports are included in the commit or build.
+
 ## Firebase
 - [ ] Enable Email/Password Authentication.
 - [ ] Enable Cloud Firestore.
