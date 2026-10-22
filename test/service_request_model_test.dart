@@ -37,5 +37,43 @@ void main() {
       expect(request.aiSuggestedPriority, 'HIGH');
       expect(request.requestTypeLabel, 'Financial assistance request');
     });
+
+    test('rejects incomplete or unsupported service submissions', () {
+      expect(
+        () => ServiceRequest.validateSubmission(
+          requestType: 'unsupported',
+          title: 'Valid title',
+          description: 'A sufficiently detailed description.',
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => ServiceRequest.validateSubmission(
+          requestType: 'general_grievance',
+          title: ' ',
+          description: 'A sufficiently detailed description.',
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => ServiceRequest.validateSubmission(
+          requestType: 'general_grievance',
+          title: 'Valid title',
+          description: 'Too short',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('accepts valid service submission fields', () {
+      expect(
+        () => ServiceRequest.validateSubmission(
+          requestType: 'hall_related',
+          title: 'Water supply problem',
+          description: 'Water has been unavailable for three days.',
+        ),
+        returnsNormally,
+      );
+    });
   });
 }

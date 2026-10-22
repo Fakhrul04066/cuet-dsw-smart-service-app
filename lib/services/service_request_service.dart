@@ -21,8 +21,14 @@ class ServiceRequestService {
       _firestore.collection('service_requests');
 
   Future<String> submit(ServiceRequest request) async {
-    final ref =
-        _requests.doc(request.id.isEmpty ? _requests.doc().id : request.id);
+    ServiceRequest.validateSubmission(
+      requestType: request.requestType,
+      title: request.title,
+      description: request.description,
+    );
+    final ref = _requests.doc(
+      request.id.isEmpty ? _requests.doc().id : request.id,
+    );
     await ref.set(request.toFirestore(useServerTimestamps: true));
     await _addHistory(
       ref.id,
@@ -62,11 +68,11 @@ class ServiceRequestService {
         if (path.isNotEmpty && mime.startsWith('image/')) {
           imageAssessment =
               await ServiceRequestAiService.instance.analyzeStoredImage(
-                    storagePath: path,
-                    title: request.title,
-                    description: request.description,
-                  ) ??
-                  '';
+                storagePath: path,
+                title: request.title,
+                description: request.description,
+              ) ??
+              '';
           break;
         }
       }
@@ -104,8 +110,10 @@ class ServiceRequestService {
     required String excludeId,
     String? studentUid,
   }) async {
-    Query<Map<String, dynamic>> query =
-        _requests.where('requestType', isEqualTo: request.requestType);
+    Query<Map<String, dynamic>> query = _requests.where(
+      'requestType',
+      isEqualTo: request.requestType,
+    );
     if (studentUid != null && studentUid.isNotEmpty) {
       query = query.where('studentUid', isEqualTo: studentUid);
     }
@@ -173,10 +181,7 @@ class ServiceRequestService {
       title: request.title,
       description: request.description,
     );
-    final duplicate = await _findDuplicate(
-      request,
-      excludeId: requestId,
-    );
+    final duplicate = await _findDuplicate(request, excludeId: requestId);
 
     String imageAssessment = '';
     for (final document in request.documents) {
@@ -185,18 +190,16 @@ class ServiceRequestService {
       if (path.isNotEmpty && mime.startsWith('image/')) {
         imageAssessment =
             await ServiceRequestAiService.instance.analyzeStoredImage(
-                  storagePath: path,
-                  title: request.title,
-                  description: request.description,
-                ) ??
-                '';
+              storagePath: path,
+              title: request.title,
+              description: request.description,
+            ) ??
+            '';
         break;
       }
     }
 
-    final fields = <String, dynamic>{
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
+    final fields = <String, dynamic>{'updatedAt': FieldValue.serverTimestamp()};
     if (ai != null) {
       fields.addAll({
         'aiSummary': ai['summary'] ?? '',
@@ -424,10 +427,7 @@ class ServiceRequestService {
           targetType: 'service_request',
           targetId: requestId,
           timestamp: DateTime.now(),
-          details: {
-            'fromStatus': fromStatus,
-            'toStatus': toStatus,
-          },
+          details: {'fromStatus': fromStatus, 'toStatus': toStatus},
         ),
       );
     } catch (_) {
@@ -456,10 +456,10 @@ class ServiceRequestService {
     return doc.exists ? ServiceRequest.fromFirestore(doc) : null;
   }
 
-  Stream<ServiceRequest?> streamById(String id) =>
-      _requests.doc(id).snapshots().map(
-            (doc) => doc.exists ? ServiceRequest.fromFirestore(doc) : null,
-          );
+  Stream<ServiceRequest?> streamById(String id) => _requests
+      .doc(id)
+      .snapshots()
+      .map((doc) => doc.exists ? ServiceRequest.fromFirestore(doc) : null);
 
   Stream<List<ServiceRequest>> streamForStudent(String uid) => _requests
       .where('studentUid', isEqualTo: uid)
@@ -498,15 +498,15 @@ class ServiceRequestService {
   }
 
   static String _labelStatus(String status) => switch (status) {
-        'SUBMITTED' => 'Submitted for Officer Review',
-        'CORRECTION_REQUIRED' => 'Resubmission Required',
-        'RESUBMITTED' => 'Resubmitted for Officer Review',
-        'OFFICER_REVIEW_COMPLETE' => 'Sent to DSW Director',
-        'APPROVED' => 'Approved',
-        'REJECTED' => 'Rejected',
-        'RESOLVED' => 'Resolved',
-        _ => status,
-      };
+    'SUBMITTED' => 'Submitted for Officer Review',
+    'CORRECTION_REQUIRED' => 'Resubmission Required',
+    'RESUBMITTED' => 'Resubmitted for Officer Review',
+    'OFFICER_REVIEW_COMPLETE' => 'Sent to DSW Director',
+    'APPROVED' => 'Approved',
+    'REJECTED' => 'Rejected',
+    'RESOLVED' => 'Resolved',
+    _ => status,
+  };
 }
 
 class _DuplicateMatch {

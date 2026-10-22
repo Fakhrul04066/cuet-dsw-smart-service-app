@@ -22,6 +22,22 @@ class ServiceRequest {
 
   static const finalStatuses = ['APPROVED', 'REJECTED', 'RESOLVED'];
 
+  static void validateSubmission({
+    required String requestType,
+    required String title,
+    required String description,
+  }) {
+    if (!requestTypes.containsKey(requestType)) {
+      throw StateError('Please select a valid service category.');
+    }
+    if (title.trim().isEmpty) {
+      throw StateError('A request title is required.');
+    }
+    if (description.trim().length < 20) {
+      throw StateError('Enter at least 20 characters describing the request.');
+    }
+  }
+
   final String id;
   final String trackingNumber;
   final String studentUid;
@@ -87,8 +103,7 @@ class ServiceRequest {
 
   factory ServiceRequest.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> snapshot,
-  ) =>
-      ServiceRequest.fromMap(snapshot.data() ?? {}, id: snapshot.id);
+  ) => ServiceRequest.fromMap(snapshot.data() ?? {}, id: snapshot.id);
 
   factory ServiceRequest.fromMap(Map<String, dynamic> data, {String? id}) {
     final now = DateTime.now();
@@ -125,39 +140,39 @@ class ServiceRequest {
   }
 
   Map<String, dynamic> toFirestore({bool useServerTimestamps = false}) => {
-        'id': id,
-        'trackingNumber': trackingNumber,
-        'studentUid': studentUid,
-        'studentId': studentId,
-        'studentName': studentName,
-        'requestType': requestType,
-        'title': title,
-        'description': description,
-        'status': status,
-        'priority': priority,
-        'assignedOfficerUid': assignedOfficerUid,
-        'assignedOfficerName': assignedOfficerName,
-        'suggestedOffice': suggestedOffice,
-        'correctionNote': correctionNote,
-        'officerReviewNote': officerReviewNote,
-        'resolutionNote': resolutionNote,
-        'documents': documents,
-        'aiSummary': aiSummary,
-        'aiSuggestedPriority': aiSuggestedPriority,
-        'aiPriorityReason': aiPriorityReason,
-        'aiRiskTags': aiRiskTags,
-        'aiDuplicateScore': aiDuplicateScore,
-        'aiDuplicateRequestId': aiDuplicateRequestId,
-        'aiDuplicateReason': aiDuplicateReason,
-        'aiImageAssessment': aiImageAssessment,
-        'createdAt': useServerTimestamps
-            ? FieldValue.serverTimestamp()
-            : Timestamp.fromDate(createdAt),
-        'updatedAt': useServerTimestamps
-            ? FieldValue.serverTimestamp()
-            : Timestamp.fromDate(updatedAt),
-        'resolvedAt': resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
-      };
+    'id': id,
+    'trackingNumber': trackingNumber,
+    'studentUid': studentUid,
+    'studentId': studentId,
+    'studentName': studentName,
+    'requestType': requestType,
+    'title': title,
+    'description': description,
+    'status': status,
+    'priority': priority,
+    'assignedOfficerUid': assignedOfficerUid,
+    'assignedOfficerName': assignedOfficerName,
+    'suggestedOffice': suggestedOffice,
+    'correctionNote': correctionNote,
+    'officerReviewNote': officerReviewNote,
+    'resolutionNote': resolutionNote,
+    'documents': documents,
+    'aiSummary': aiSummary,
+    'aiSuggestedPriority': aiSuggestedPriority,
+    'aiPriorityReason': aiPriorityReason,
+    'aiRiskTags': aiRiskTags,
+    'aiDuplicateScore': aiDuplicateScore,
+    'aiDuplicateRequestId': aiDuplicateRequestId,
+    'aiDuplicateReason': aiDuplicateReason,
+    'aiImageAssessment': aiImageAssessment,
+    'createdAt': useServerTimestamps
+        ? FieldValue.serverTimestamp()
+        : Timestamp.fromDate(createdAt),
+    'updatedAt': useServerTimestamps
+        ? FieldValue.serverTimestamp()
+        : Timestamp.fromDate(updatedAt),
+    'resolvedAt': resolvedAt == null ? null : Timestamp.fromDate(resolvedAt!),
+  };
 
   static DateTime _toDateTime(dynamic value, {required DateTime fallback}) {
     if (value is Timestamp) return value.toDate();
@@ -175,9 +190,9 @@ class ServiceRequest {
 
   static List<Map<String, dynamic>> _mapList(dynamic value) => value is List
       ? value
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList()
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList()
       : const [];
 
   static List<String> _stringList(dynamic value) =>
