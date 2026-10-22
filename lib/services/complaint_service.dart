@@ -10,6 +10,32 @@ class ComplaintService {
   CollectionReference<Map<String, dynamic>> get _complaints =>
       _firestore.collection('complaints');
 
+  static void validateSubmission({
+    required String category,
+    required String title,
+    required String description,
+    required String assignedOffice,
+    required String urgency,
+  }) {
+    if (category.trim().isEmpty) {
+      throw StateError('Please select a complaint category.');
+    }
+    if (title.trim().isEmpty) {
+      throw StateError('A complaint title is required.');
+    }
+    if (description.trim().length < 20) {
+      throw StateError(
+        'Enter at least 20 characters describing the complaint.',
+      );
+    }
+    if (assignedOffice.trim().isEmpty) {
+      throw StateError('Please select an assigned office.');
+    }
+    if (urgency.trim().isEmpty) {
+      throw StateError('Please select an urgency level.');
+    }
+  }
+
   Future<String> submitComplaint({
     required String category,
     required String title,
@@ -18,6 +44,13 @@ class ComplaintService {
     required String assignedOffice,
     required String urgency,
   }) async {
+    validateSubmission(
+      category: category,
+      title: title,
+      description: description,
+      assignedOffice: assignedOffice,
+      urgency: urgency,
+    );
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw StateError('No authenticated student found.');
@@ -32,13 +65,13 @@ class ComplaintService {
       'trackingNumber': trackingNumber,
       'studentUid': user.uid,
       'studentId': user.email?.split('@').first ?? '',
-      'category': category,
-      'title': title,
-      'description': description,
+      'category': category.trim(),
+      'title': title.trim(),
+      'description': description.trim(),
       'isConfidential': isConfidential,
       'status': 'Submitted',
-      'assignedOffice': assignedOffice,
-      'urgency': urgency,
+      'assignedOffice': assignedOffice.trim(),
+      'urgency': urgency.trim(),
       'resolutionNote': '',
       'feedback': '',
       'createdAt': Timestamp.fromDate(now),
