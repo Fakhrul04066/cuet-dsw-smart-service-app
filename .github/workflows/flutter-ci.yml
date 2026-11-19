@@ -1,0 +1,56 @@
+name: Flutter CI and Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Get source code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check code quality
+        run: flutter analyze
+
+      - name: Run offline unit tests
+        run: |
+          flutter test \
+            test/ai_service_test.dart \
+            test/firestore_models_test.dart \
+            test/service_request_model_test.dart \
+            test/student_auth_mapper_test.dart
+
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+
+      - name: Upload APK for manual download
+        uses: actions/upload-artifact@v4
+        with:
+          name: CUET-DSW-debug-APK
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
