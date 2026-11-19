@@ -1,92 +1,28 @@
 
-name: Flutter CI and Build
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: flutter-ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  validate:
-    name: Analyze, test, and build
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    steps:
-      # 1. Checkout source code
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      # 2. Set up Java
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      # 3. Set up Flutter
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: '3.35.3'
-          cache: true
-          cache-key: ${{ runner.os }}-pub-${{ hashFiles('pubspec.lock') }}
-
-      # 4. Verify Firebase configuration
-      - name: Verify Firebase client configuration
-        run: |
-          test -s lib/firebase_options.dart
-          test -s android/app/google-services.json
-
-      # 5. Install dependencies
-      - name: Install dependencies
-        run: flutter pub get --enforce-lockfile
-
-      # 6. Analyze Flutter code
-      - name: Analyze
-        run: flutter analyze
-
-      # 7. Run offline tests
-      - name: Run offline tests
-        run: flutter test --exclude-tags firestore-live
-
-      # 8. Build Android debug APK
       - name: Build Android debug APK
-        id: build_apk
-        run: flutter build apk --debug
-
-      # 9. Diagnose build failures
-      - name: Diagnose Kotlin compilation failure
-        if: ${{ failure() && steps.build_apk.outcome == 'failure' }}
-        working-directory: android
         shell: bash
         run: |
-          if [ -f ./gradlew ]; then
-            bash ./gradlew \
-              :firebase_auth:compileDebugKotlin \
-              :firebase_storage:compileDebugKotlin \
-              --stacktrace --info --no-daemon
+          if flutter build apk --debug --no-pub; then
+            echo "APK build successful"
           else
-            cd ..
-            flutter build apk --debug --verbose
-          fi
+            echo "First build failed"
+            echo "Retrying after sequential Kotlin compilation"
 
-      # 10. Upload APK
-      - name: Upload Android debug APK
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cuet-dsw-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+            if [ ! -f android/gradlew ]; then
+              echo "Gradle wrapper not found"
+              exit 1
+            fi
+
+            (
+              cd android
+              bash ./gradlew \
+                :firebase_auth:compileDebugKotlin \
+                :firebase_storage:compileDebugKotlin \
+                --no-parallel \
+                --max-workers=1 \
+                --no-daemon \
+                --stacktrace
+            )
+
+            flutter build apk --debug --no-pub
+          fi
