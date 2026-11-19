@@ -1,9 +1,11 @@
-name: Flutter CI
+
+name: Flutter CI and Build
 
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +19,8 @@ jobs:
   validate:
     name: Analyze, test, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
