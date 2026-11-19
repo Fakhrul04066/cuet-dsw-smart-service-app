@@ -38,7 +38,6 @@ migrate_working_dir/
 .env.*
 *.env
 *.local
-firebase_options.dart
 secrets.*
 config.*
 
